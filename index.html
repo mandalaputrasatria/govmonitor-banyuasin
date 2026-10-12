@@ -3735,6 +3735,30 @@
                 return { success: true };
             }
 
+            const DEFAULT_GAS_EXEC_URL = "https://script.google.com/macros/s/AKfycbyD0zQymgP12Kmb-7FQ9tUraYWS2UmQEjYFkD9Ca-XV_85SlbXNxOGIndhUb1R-vGE/exec";
+            window.DEFAULT_GAS_EXEC_URL = DEFAULT_GAS_EXEC_URL;
+
+            async function callRemoteGAS(method, args) {
+                const targetUrl = window.GM_EXEC_URL || DEFAULT_GAS_EXEC_URL;
+                if (!targetUrl) throw new Error('Target Google Apps Script URL tidak tersedia.');
+                
+                const response = await fetch(targetUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        protocol: 'govmonitor-sites-api-v1',
+                        method: method,
+                        args: args
+                    })
+                });
+                const text = await response.text();
+                try {
+                    return JSON.parse(text);
+                } catch(e) {
+                    throw new Error('Respon Apps Script memerlukan otorisasi (Anyone).');
+                }
+            }
+
             function createRunner(successCb, failureCb) {
                 successCb = successCb || (() => { });
                 failureCb = failureCb || (() => { });
@@ -3744,12 +3768,21 @@
                         if (method === 'withFailureHandler') return function(cb) { return createRunner(successCb, cb); };
                         if (method === 'withUserObject') return function() { return createRunner(successCb, failureCb); };
                         return function(...args) {
-                            setTimeout(function() {
+                            callRemoteGAS(method, args).then(res => {
+                                if (res && res.success !== false) {
+                                    successCb(res);
+                                } else {
+                                    console.warn('[GovMonitor Remote Live]: Menggunakan data lokal cadangan (' + (res?.error || '') + ')');
+                                    const fallbackRes = handleMockRPC(method, args);
+                                    successCb(fallbackRes);
+                                }
+                            }).catch(err => {
+                                console.warn('[GovMonitor Live Bridge]: ' + err.message + ' (Fallback lokal aktif)');
                                 try {
                                     const res = handleMockRPC(method, args);
                                     successCb(res);
                                 } catch (e) { failureCb(e); }
-                            }, 20);
+                            });
                         };
                     }
                 });
@@ -7948,7 +7981,7 @@
             initWebSpeechAPI();
             if (!IS_GAS) { initAuditLogsStore(); fetchUsersFromGAS(); }
             else { staffList = []; auditLogsData = []; mockChatStore = {}; }
-            // PRATINJAU DEMO dinonaktifkan
+            // Mode rilis penuh resmi GovMonitor Diskoperindag Pemkab Banyuasin
 
             if (IS_GAS) {
                 const saved = sessionStorage.getItem('govmonitor_session') || localStorage.getItem('govmonitor_session');
