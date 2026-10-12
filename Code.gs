@@ -6,8 +6,24 @@ const GM = { idleMilliseconds: 300000, sessionSeconds: 21600, maxCells: 200000, 
 
 function db_() {
   var id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
-  var ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss || !ss.getSheetByName('Users')) throw new Error('Database belum siap. Jalankan fungsi setupDatabase dari editor Apps Script.');
+  var ss = null;
+  if (id) {
+    try { ss = SpreadsheetApp.openById(id); } catch(e) { ss = null; }
+  }
+  if (!ss) {
+    try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch(e) { ss = null; }
+  }
+  if (!ss || !ss.getSheetByName('Users')) {
+    try { setupDatabase(); } catch(e) { Logger.log('Auto-setup error: ' + e.message); }
+    id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+    if (id) {
+      try { ss = SpreadsheetApp.openById(id); } catch(e) { ss = null; }
+    }
+    if (!ss) {
+      try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch(e) { ss = null; }
+    }
+  }
+  if (!ss || !ss.getSheetByName('Users')) throw new Error('Database Google Sheets belum siap. Silakan jalankan fungsi setupDatabase sekali di Google Apps Script.');
   return ss;
 }
 function locked_(fn) {
@@ -464,9 +480,16 @@ function newSchema_(ss){
 function setupDatabase(){
  var owner=ownerOnly_();return locked_(function(){
   var p=PropertiesService.getScriptProperties(),id=p.getProperty('SPREADSHEET_ID');
-  var activeSS=null;
-  try{activeSS=SpreadsheetApp.getActiveSpreadsheet();}catch(e){}
-  var ss=id?SpreadsheetApp.openById(id):(activeSS||SpreadsheetApp.create('Gov Monitor Diskoperindag Banyuasin — Database Baru'));
+  var ss=null;
+  if(id){
+    try{ss=SpreadsheetApp.openById(id);}catch(e){ss=null;}
+  }
+  if(!ss){
+    try{ss=SpreadsheetApp.getActiveSpreadsheet();}catch(e){ss=null;}
+  }
+  if(!ss){
+    ss=SpreadsheetApp.create('Gov Monitor Diskoperindag Banyuasin — Database');
+  }
   p.setProperty('SPREADSHEET_ID',ss.getId());
   if(owner&&owner!=='owner')p.setProperty('OWNER_EMAIL',owner);
   ss.setSpreadsheetTimeZone('Asia/Jakarta');

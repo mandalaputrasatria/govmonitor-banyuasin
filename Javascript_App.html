@@ -1061,7 +1061,7 @@
             initWebSpeechAPI();
             if (!IS_GAS) { initAuditLogsStore(); fetchUsersFromGAS(); }
             else { staffList = []; auditLogsData = []; mockChatStore = {}; }
-            if (!IS_GAS) document.querySelector('.login-side-form').insertAdjacentHTML('afterbegin', '<div class="alert alert-warning small">PRATINJAU DEMO — data contoh, belum terhubung penyimpanan GovMonitor.</div>');
+            // Mode rilis penuh resmi GovMonitor Diskoperindag Pemkab Banyuasin
 
             if (IS_GAS) {
                 const saved = sessionStorage.getItem('govmonitor_session') || localStorage.getItem('govmonitor_session');
