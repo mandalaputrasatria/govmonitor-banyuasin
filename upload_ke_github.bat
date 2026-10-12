@@ -40,8 +40,8 @@ fs.writeFileSync('bundle_temp.html', html, 'utf8');
 
 if exist "bundle_temp.html" (
     "%GIT_CMD%" checkout gh-pages
-    move /y "bundle_temp.html" "Index.html" >nul
-    "%GIT_CMD%" add Index.html
+    move /y "bundle_temp.html" "index.html" >nul
+    "%GIT_CMD%" add index.html
     "%GIT_CMD%" commit -m "Update otomatis website live gh-pages: %COMMIT_MSG%"
     "%GIT_CMD%" push origin gh-pages
     "%GIT_CMD%" checkout main
