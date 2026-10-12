@@ -4,20 +4,28 @@
  */
 const GM = { idleMilliseconds: 300000, sessionSeconds: 21600, maxCells: 200000, maxJSON: 4000000 };
 
+const USER_SPREADSHEET_ID = '1SgaDigEUmYCLMfXPysWDxI243RgZlbws6fozC9xXF9M';
+
 function db_() {
-  var id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  var id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID') || USER_SPREADSHEET_ID;
   var ss = null;
   if (id) {
     try { ss = SpreadsheetApp.openById(id); } catch(e) { ss = null; }
+  }
+  if (!ss) {
+    try { ss = SpreadsheetApp.openById(USER_SPREADSHEET_ID); } catch(e) { ss = null; }
   }
   if (!ss) {
     try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch(e) { ss = null; }
   }
   if (!ss || !ss.getSheetByName('Users')) {
     try { setupDatabase(); } catch(e) { Logger.log('Auto-setup error: ' + e.message); }
-    id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+    id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID') || USER_SPREADSHEET_ID;
     if (id) {
       try { ss = SpreadsheetApp.openById(id); } catch(e) { ss = null; }
+    }
+    if (!ss) {
+      try { ss = SpreadsheetApp.openById(USER_SPREADSHEET_ID); } catch(e) { ss = null; }
     }
     if (!ss) {
       try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch(e) { ss = null; }
@@ -479,10 +487,13 @@ function newSchema_(ss){
 }
 function setupDatabase(){
  var owner=ownerOnly_();return locked_(function(){
-  var p=PropertiesService.getScriptProperties(),id=p.getProperty('SPREADSHEET_ID');
+  var p=PropertiesService.getScriptProperties(),id=p.getProperty('SPREADSHEET_ID') || USER_SPREADSHEET_ID;
   var ss=null;
   if(id){
     try{ss=SpreadsheetApp.openById(id);}catch(e){ss=null;}
+  }
+  if(!ss){
+    try{ss=SpreadsheetApp.openById(USER_SPREADSHEET_ID);}catch(e){ss=null;}
   }
   if(!ss){
     try{ss=SpreadsheetApp.getActiveSpreadsheet();}catch(e){ss=null;}
