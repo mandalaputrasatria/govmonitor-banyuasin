@@ -1,0 +1,77 @@
+name: Deploy GovMonitor to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Static Web App Bundle for GitHub Pages
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+
+            let html = fs.readFileSync("Index.html", "utf8");
+            
+            // Mock boot data untuk runtime GitHub Pages
+            const mockBoot = {
+              success: true,
+              version: "2026.10.07-github-pages",
+              deployment_url: "",
+              timezone: "Asia/Jakarta",
+              archive_token: ""
+            };
+
+            html = html.replace(/<script id="gm-boot-data" type="application\/json">[\s\S]*?<\/script>/, `<script id="gm-boot-data" type="application/json">${JSON.stringify(mockBoot)}</script>`);
+            html = html.replace(/<\?!=?\s*bootJson\s*\?>/g, JSON.stringify(mockBoot));
+
+            // Evaluasi template modular GAS <?!= include("...") ?>
+            html = html.replace(/<\?!=\s*include\(['\''"]([^'\''"]+)['\''"]\)\s*;?\s*\?>/g, (m, f) => {
+              const file = f + ".html";
+              if (fs.existsSync(file)) {
+                return fs.readFileSync(file, "utf8");
+              }
+              return "<!-- Missing " + f + " -->";
+            });
+
+            // Tulis sebagai index.html huruf kecil standar Web
+            fs.writeFileSync("index.html", html, "utf8");
+            console.log("Static index.html built successfully:", html.length, "bytes");
+          '
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
