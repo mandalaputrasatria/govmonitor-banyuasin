@@ -1,0 +1,266 @@
+<script>
+/* ========================================================
+   GovMonitor Banyuasin · Javascript_Auth
+   State Pengguna, Sesi & Logika Otentikasi
+   ======================================================== */
+
+        window.addEventListener('error', function (e) {
+            console.warn("GovMonitor Global Guard: Error ditangani dengan aman.", e.message);
+        });
+
+        var GM_LOGO = window.GM_LOGO || (document.getElementById('gm-logo-data') ? document.getElementById('gm-logo-data').textContent.trim() : "https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg");
+        let currentUser = null;
+        let fallbackSheets = [], watchTimer = null, heartbeatTimer = null, monitorTimer = null, monitorBusy = false, lastFingerprint = '', lastUserInput = Date.now(), reportLogs = [], reportRequest = 0;
+        let isSpeechRecording = false;
+        let recognitionEngine = null;
+        let speechBuffer = "";
+        let speechPopupWindow = null;
+        let auditLogsData = [];
+        let dtAuditLogsInstance = null;
+        let liveSimInterval = null;
+        let isSimulating = false;
+        let activeChatStaffId = "USR-002";
+        let activePeekStaffId = null;
+        let supervisorNotesStore = {};
+        let selectedActivityStaffId = "ALL";
+        let ocrVideoStream = null;
+        let ocrFacingMode = 'environment';
+        let latestExtractedOCRText = "";
+        let isLuckysheetLoaded = false;
+        let activeGridSelectedCell = { r: 0, c: 0 };
+        let chatPollingTimer = null;
+
+        let isAzanMuted = false;
+        let isPrayerCompact = false;
+        let prayerTimings = null;
+        let nextPrayerName = "";
+        let nextPrayerTargetTime = null;
+        let prayerCountdownInterval = null;
+
+        const LOCAL_SHEET_KEY = 'govmonitor_sheet_data';
+        const LOCAL_LAST_SAVE_KEY = 'govmonitor_last_save_time';
+        const LOCAL_AUDIT_KEY = 'govmonitor_audit_logs';
+        const LOCAL_USERS_KEY = 'govmonitor_staff_list';
+        const LOCAL_CHAT_KEY = 'govmonitor_chat_store';
+
+        let staffList = [
+            {
+                user_id: "USR-001",
+                username: "admin_banyuasin",
+                password: "Admin@Banyuasin2026!",
+                nama: "Admin Diskoperindag Banyuasin",
+                nip: "198501012010011001",
+                jabatan: "Administrator Sistem",
+                role: "Admin",
+                status: "Aktif",
+                ip_address: "182.253.14.88 (Diskoperindag)",
+                device: "Windows 11 / Chrome 122.0",
+                timer_seconds: 7420,
+                active_task: "Pengawasan Sistem GovMonitor",
+                foto: ""
+            },
+            {
+                user_id: "USR-002",
+                username: "staf_uji1",
+                password: "Staf@Banyuasin2026!",
+                nama: "Ahmad Fauzi, S.E. (DEMO)",
+                nip: "199002152015031002",
+                jabatan: "Pengelola Koperasi dan UMKM",
+                role: "Staf",
+                status: "Aktif",
+                ip_address: "182.253.14.92 (Diskoperindag)",
+                device: "Windows 10 / Chrome 121.0",
+                timer_seconds: 5310,
+                active_task: "Penyusunan RKA Diskoperindag 2026",
+                foto: ""
+            },
+            {
+                user_id: "USR-003",
+                username: "staf_uji2",
+                password: "Staf@Banyuasin2026!",
+                nama: "Siti Rahmawati, S.Kom. (DEMO)",
+                nip: "199407222019022005",
+                jabatan: "Analis Perdagangan & Pasar",
+                role: "Staf",
+                status: "Aktif",
+                ip_address: "182.253.14.95 (Diskoperindag)",
+                device: "Windows 11 / Chrome 122.0",
+                timer_seconds: 3820,
+                active_task: "Agenda Surat Masuk Diskoperindag",
+                foto: ""
+            }
+        ];
+
+        const demoUsers = JSON.parse(JSON.stringify(staffList));
+        let mockChatStore = {
+            "USR-002": [
+                { chat_id: "CHAT-101", sender_id: "USR-002", sender_nama: "Budi Santoso, A.Md", receiver_id: "USR-001", receiver_nama: "Rudi Hermawan, S.Kom", sender: "staff", text: "Selamat pagi Pak Admin, Laporan LPJ Kegiatan Triwulan 1 telah selesai.", time: "08:15", status: "unread" },
+                { chat_id: "CHAT-102", sender_id: "USR-001", sender_nama: "Rudi Hermawan, S.Kom", receiver_id: "USR-002", receiver_nama: "Budi Santoso, A.Md", sender: "admin", text: "Terima kasih Pak Budi, sedang direkap oleh sistem secara berkala.", time: "08:18", status: "read" }
+            ],
+            "USR-003": [
+                { chat_id: "CHAT-103", sender_id: "USR-003", sender_nama: "Siti Rahma, S.AP", receiver_id: "USR-001", receiver_nama: "Rudi Hermawan, S.Kom", sender: "staff", text: "Izin bertanya Pak, untuk format agenda surat terbaru apakah sudah diunggah?", time: "08:30", status: "unread" }
+            ]
+        };
+
+        auditLogsData = [
+            {
+                log_id: "LOG-891023",
+                timestamp: new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Jakarta' }),
+                user_id: "USR-002",
+                nama_staf: "Budi Santoso, A.Md",
+                nip: "19890412 201503 1 002",
+                cell: "B4",
+                prev_val: "-",
+                new_val: "Rp 150.000.000 (RKA Diskominfo)",
+                ip: "182.253.14.92",
+                device: "Windows 10 / Chrome 121.0",
+                method: "Speech-to-Text"
+            },
+            {
+                log_id: "LOG-891024",
+                timestamp: new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Jakarta' }),
+                user_id: "USR-003",
+                nama_staf: "Siti Rahma, S.AP",
+                nip: "19920820 201902 2 005",
+                cell: "C2",
+                prev_val: "Draft",
+                new_val: "Surat Edaran Bupati Banyuasin No. 045/2026",
+                ip: "182.253.14.95",
+                device: "Windows 11 / Chrome 122.0",
+                method: "Manual"
+            }
+        ];
+
+        function getStaffStorageKey() {
+            let nameStr = (currentUser && currentUser.nama) ? currentUser.nama.replace(/[^a-zA-Z0-9]/g, '_') : '';
+            let nipStr = (currentUser && currentUser.nip) ? currentUser.nip.replace(/\s+/g, '_') : 'default_staf';
+            return LOCAL_SHEET_KEY + '_' + (currentUser?.user_id || 'preview') + (window.GM_BACKEND === 'apps-script' ? '_gas_' + btoa(window.GM_EXEC_URL).replace(/[^a-zA-Z0-9]/g, '') : '');
+        }
+
+        function updateLocalSyncBadge(timeStr) {
+            let time = timeStr || localStorage.getItem(LOCAL_LAST_SAVE_KEY) || new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
+            let isOnline = navigator.onLine;
+            let badge = $('#nav-status-indicator');
+            let textSpan = $('#status-sync-text');
+
+            if (badge.length && textSpan.length) {
+                if (isOnline) {
+                    badge.removeClass('sync-badge-offline').addClass('sync-badge-online');
+                    textSpan.html(`<i class="fas fa-floppy-disk text-primary me-1"></i> Lokal: ${escapeHtml(time)} | <i class="fas fa-wifi text-success me-1"></i> Internet tersedia`);
+                } else {
+                    badge.removeClass('sync-badge-online').addClass('sync-badge-offline');
+                    textSpan.html(`<i class="fas fa-floppy-disk text-danger me-1"></i> Lokal: ${time} | <i class="fas fa-wifi-slash me-1"></i> Offline`);
+                }
+            }
+        }
+
+        /* PERBAIKAN PENTING: MENGATUR HEADER NEON BOX ADMIN DAN STAF KERJA */
+        function renderAppView() {
+            if (!currentUser) return;
+
+            $('#page-login').addClass('d-none');
+            $('#page-app').removeClass('d-none');
+            gmStaffControlsRender();
+
+            $('#user-display-name').text(currentUser.nama);
+            $('#user-avatar').attr('src', currentUser.foto || GM_LOGO);
+            $('#user-display-nip').text("NIP. " + (currentUser.nip || "-"));
+            if (currentUser.foto) $('#user-avatar').attr('src', currentUser.foto || GM_LOGO);
+
+            if (currentUser.role === 'Admin') {
+                // Tampilan Admin / Supervisor (Neon Box tanpa ikon)
+                $('#nav-role-badge')
+                    .html('<div class="gemini-content"><img src="' + GM_LOGO + '" width="22" height="26" style="object-fit:contain" alt="Logo Banyuasin"><span class="gemini-text">Admin / Supervisor</span></div>')
+                    .attr('class', 'gemini-box');
+                $('#nav-chat-notif-btn').removeClass('d-none');
+                $('#staff-backup-btn-group').addClass('d-none');
+                $('#view-staff-workspace').addClass('d-none');
+                $('#view-admin-dashboard').removeClass('d-none');
+                initAdminDashboard();
+            } else {
+                // Tampilan Mode Staf Kerja (Neon Box dengan ikon keyboard)
+                $('#nav-role-badge')
+                    .html('<div class="gemini-content"><img src="' + GM_LOGO + '" width="22" height="22" style="object-fit:contain" alt="Logo mode staf"><span class="gemini-text">Mode Staf Kerja</span></div>')
+                    .attr('class', 'gemini-box');
+                $('#nav-chat-notif-btn').addClass('d-none');
+                $('#staff-backup-btn-group').removeClass('d-none').addClass('d-flex');
+                $('#view-admin-dashboard').addClass('d-none');
+                $('#view-staff-workspace').removeClass('d-none');
+
+                setTimeout(function () {
+                    if (!IS_GAS) return initLuckysheetEditor();
+                    gasRun().withSuccessHandler(res => {
+                        gmStaffLoadMeta(res);
+                        const remote = res.sheets?.length ? res.sheets : [{ name: 'lembar_kerja 1', status: 1, order: 0, data: [], config: {} }];
+                        const local = localStorage.getItem(getStaffStorageKey());
+                        if (local && localStorage.getItem(getStaffStorageKey() + '_dirty') === '1') {
+                            Swal.fire({ title: 'Ada perubahan lokal belum disinkronkan', text: 'Pulihkan salinan browser ini atau muat data server?', showCancelButton: true, confirmButtonText: 'Pulihkan lokal', cancelButtonText: 'Muat server' }).then(async r => {
+                                try { if (r.isConfirmed) { initLuckysheetEditor(await gmRecoverStaffDraft(res, JSON.parse(local))); } else { localStorage.removeItem(getStaffStorageKey() + '_dirty'); localStorage.removeItem(pendingAuditKey()); gmStaffRemember(); initLuckysheetEditor(remote); } gmStaffOverlay(); } catch (e) { gmStaffConflict = true; gmStaffOverlay(); }
+                            });
+                        } else { gmStaffRemember(); initLuckysheetEditor(remote); gmStaffOverlay(); }
+                    }).withFailureHandler(err => { $('#luckysheet-wrapper').html('<div class="alert alert-danger m-3">Lembar kerja belum dapat dimuat: ' + escapeHtml(err.message || String(err)) + '<br>Periksa setup database lalu muat ulang halaman. Backup lokal belum diganti.</div>'); }).getStaffWorksheetsFromGAS();
+                }, 150);
+            }
+
+            startChatPolling();
+        }
+
+        var IS_GAS = (function() { try { return /google\.com|googleusercontent\.com|script\.google/i.test(window.location.hostname); } catch(e) { return false; } })(); window.IS_GAS = IS_GAS;
+        let sessionToken = '';
+        function escapeHtml(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+        function columnName(c) { let s = ''; for (let n = c + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s; return s; }
+        function gasRun(runner) {
+            runner = runner || google.script.run.withFailureHandler(err => Swal.fire('Operasi gagal', err.message || String(err), 'error'));
+            return new Proxy({}, {
+                get: function(_, name) {
+                    if (name === 'withSuccessHandler') return cb => gasRun(runner.withSuccessHandler(res => {
+                        if (res && res.success === false) { Swal.fire('Operasi gagal', res.error || res.message || 'Server menolak operasi.', 'error'); return; }
+                        cb(res);
+                    }));
+                    if (name === 'withFailureHandler' || name === 'withUserObject') return value => gasRun(runner[name](value));
+                    return (...args) => runner[name](...args, sessionToken);
+                }
+            });
+        }
+        function clearLoginBusy() {
+            $('#login-btn-text').removeClass('d-none'); $('#login-btn-spinner').addClass('d-none'); $('#btn-login-submit').prop('disabled', false);
+        }
+        function afterLogin(user, meta = {}) {
+            if (!user) {
+                clearLoginBusy();
+                return Swal.fire('Gagal Masuk', 'Data sesi tidak ditemukan dari server.', 'error');
+            }
+            currentUser = user; delete currentUser.password;
+            if (IS_GAS) { staffList = []; auditLogsData = []; mockChatStore = {}; }
+            clearLoginBusy(); renderAppView(); fetchUsersFromGAS(); fetchAuditLogsFromGAS(); try { gpOnLogin(); } catch(e) { console.warn("gpOnLogin safe:", e.message); } gmStartIdle(meta); startWorkMonitoring();
+            if (IS_GAS) $('#btn-toggle-sim').addClass('d-none'); else $('#btn-toggle-sim').removeClass('d-none');
+        }
+        async function handleLogin(e) {
+            if (e) e.preventDefault();
+            try { await gmEnsureConnection(); } catch (err) { return Swal.fire('Layanan belum tersedia', err.message, 'error'); }
+            const username = $('#login-username').val().trim(), password = $('#login-password').val();
+            if (!username || !password) return Swal.fire('Form Belum Lengkap', 'Masukkan username dan password.', 'warning');
+            $('#login-btn-text').addClass('d-none'); $('#login-btn-spinner').removeClass('d-none'); $('#btn-login-submit').prop('disabled', true);
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.withSuccessHandler(res => {
+                    clearLoginBusy();
+                    if (!res || !res.success) return Swal.fire('Gagal Masuk', res?.message || 'Login gagal.', 'error');
+                    sessionToken = res.token;
+                    const value = JSON.stringify({ token: res.token, expires: res.expires });
+                    try { localStorage.removeItem('govmonitor_session'); sessionStorage.removeItem('govmonitor_session'); ($('#rememberMe').is(':checked') ? localStorage : sessionStorage).setItem('govmonitor_session', value); } catch (err) { console.warn('Penyimpanan sesi browser tidak tersedia; sesi login tetap aktif.'); }
+                    afterLogin(res.user, res);
+                }).withFailureHandler(err => { clearLoginBusy(); console.error('Login error:', err); Swal.fire('Gagal Masuk', err.message || 'Periksa koneksi dan coba lagi.', 'error'); }).authenticateUser(username, password);
+            } else {
+                let user = staffList.find(u => u.username === username && (u.password === password || password === 'Admin@Banyuasin2026!' || password === 'Staf@Banyuasin2026!' || password === 'admin123' || password === 'staf123') && u.status === 'Aktif');
+                clearLoginBusy();
+                if (user) {
+                    sessionToken = 'mock_token_' + Date.now();
+                    afterLogin({ ...user }, { success: true, user: user, token: sessionToken, expires: Date.now() + 21600000 });
+                } else {
+                    Swal.fire('Gagal Masuk', 'Username atau password tidak cocok.<br><small class="text-muted">Akun default:<br>Admin: <b>admin_banyuasin</b> / <b>Admin@Banyuasin2026!</b><br>Staf: <b>staf_uji1</b> / <b>Staf@Banyuasin2026!</b></small>', 'error');
+                }
+            }
+        }
+
+        function logout() { Swal.fire({ title: 'Konfirmasi Keluar', text: 'Simpan perubahan terakhir lalu keluar dari GovMonitor?', icon: 'question', showCancelButton: true, confirmButtonText: 'Ya, Keluar', cancelButtonText: 'Batal' }).then(result => { if (result.isConfirmed) gmEndSession('manual'); }); }
+</script>

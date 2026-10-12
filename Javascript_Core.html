@@ -1,0 +1,364 @@
+<script>
+
+// Safe jQuery / DOM Selector Fallback (Menjamin $ selalu siap tanpa menunggu CDN)
+(function() {
+    if (typeof window.$ === 'undefined') {
+        window.$ = function(selector) {
+            if (typeof selector === 'function') {
+                if (document.readyState !== 'loading') selector();
+                else document.addEventListener('DOMContentLoaded', selector);
+                return;
+            }
+            if (!selector) return { length: 0, val: () => '', text: () => '', addClass: () => {}, removeClass: () => {}, hasClass: () => false };
+            const elements = typeof selector === 'string' ? Array.from(document.querySelectorAll(selector)) : (Array.isArray(selector) ? selector : [selector]);
+            return {
+                length: elements.length,
+                val: function(v) {
+                    if (v !== undefined) { elements.forEach(el => { if (el) el.value = v; }); return this; }
+                    return elements[0] ? elements[0].value || '' : '';
+                },
+                text: function(t) {
+                    if (t !== undefined) { elements.forEach(el => { if (el) el.textContent = t; }); return this; }
+                    return elements[0] ? elements[0].textContent || '' : '';
+                },
+                html: function(h) {
+                    if (h !== undefined) { elements.forEach(el => { if (el) el.innerHTML = h; }); return this; }
+                    return elements[0] ? elements[0].innerHTML || '' : '';
+                },
+                attr: function(k, v) {
+                    if (v !== undefined) { elements.forEach(el => { if (el) el.setAttribute(k, v); }); return this; }
+                    return elements[0] ? elements[0].getAttribute(k) : null;
+                },
+                prop: function(k, v) {
+                    if (v !== undefined) { elements.forEach(el => { if (el) el[k] = v; }); return this; }
+                    return elements[0] ? elements[0][k] : null;
+                },
+                is: function(s) {
+                    if (s === ':checked') return elements[0] ? !!elements[0].checked : false;
+                    return elements[0] ? (elements[0].matches ? elements[0].matches(s) : false) : false;
+                },
+                addClass: function(c) {
+                    elements.forEach(el => { if (el && el.classList) el.classList.add(...c.split(' ').filter(Boolean)); });
+                    return this;
+                },
+                removeClass: function(c) {
+                    elements.forEach(el => { if (el && el.classList) el.classList.remove(...c.split(' ').filter(Boolean)); });
+                    return this;
+                },
+                hasClass: function(c) {
+                    return elements[0] && elements[0].classList ? elements[0].classList.contains(c) : false;
+                },
+                hide: function() { elements.forEach(el => { if (el) el.style.display = 'none'; }); return this; },
+                show: function() { elements.forEach(el => { if (el) el.style.display = ''; }); return this; },
+                find: function(s) { return window.$(elements[0] ? elements[0].querySelectorAll(s) : []); },
+                on: function(ev, cb) { elements.forEach(el => { if (el) el.addEventListener(ev, cb); }); return this; }
+            };
+        };
+        window.jQuery = window.$;
+    }
+})();
+
+/* ========================================================
+   GovMonitor Banyuasin · Javascript_Core
+   Runtime Bridge, Smart Error Boundary & CDN Fallback Guard
+   ======================================================== */
+
+        var GM_OFFICE_BG = "https://lh3.googleusercontent.com/d/14JH2PMtD8fIZzCbnkCKhA5Jev3lbCuno";
+        window.GM_OFFICE_BG = GM_OFFICE_BG;
+        var GM_LOGO = (document.getElementById('gm-logo-data') ? document.getElementById('gm-logo-data').textContent.trim() : "https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg");
+        window.GM_LOGO = GM_LOGO;
+        window.GM_BOOT = (function () {
+            try {
+                const el = document.getElementById('gm-boot-data');
+                const txt = el ? el.textContent.trim() : '';
+                if (txt && txt.startsWith('{')) return JSON.parse(txt);
+            } catch (e) { }
+            return { success: true, version: '2026.10.07-new-2', deployment_url: '', timezone: 'Asia/Jakarta', archive_token: '' };
+        })();
+        window.GM_NATIVE_APPS_SCRIPT = true;
+        window.GM_SITES = false;
+        window.GM_BACKEND = 'apps-script';
+        window.GM_EXEC_URL = window.GM_BOOT.deployment_url || '';
+
+        var IS_GAS = (function() { try { return /google\.com|googleusercontent\.com|script\.google/i.test(window.location.hostname); } catch(e) { return false; } })(); window.IS_GAS = IS_GAS;
+
+        var gmConnectionError = '';
+        function gmConnectionNotice() {
+            const notice = document.getElementById('gm-login-error');
+            if (notice) {
+                notice.textContent = gmConnectionError;
+                notice.classList.toggle('d-none', !gmConnectionError);
+            }
+        }
+        function gmEnsureConnection() {
+            return Promise.resolve();
+        }
+        window.GM_CONNECTION_READY = Promise.resolve();
+        document.addEventListener('DOMContentLoaded', function () {
+            gmConnectionNotice();
+            document.querySelectorAll('img[data-gm-logo]').forEach(img => {
+                if (typeof GM_LOGO !== 'undefined') img.src = GM_LOGO;
+            });
+        });
+
+        (function () {
+            // Jika berada di domain Google Apps Script, biarkan google.script.run asli dari Google berjalan
+            const isGoogleHost = /google\.com|googleusercontent\.com|script\.google/i.test(window.location.hostname);
+            if (isGoogleHost) {
+                console.log('GovMonitor: Menjalankan mode Google Apps Script Asli (Terhubung langsung ke Code.gs).');
+                return;
+            }
+
+            const DEFAULT_USERS_DATA = [
+                { user_id: 'USR-001', username: 'admin_banyuasin', password: 'Admin@Banyuasin2026!', nama: 'Admin Diskoperindag Banyuasin', nip: '198501012010011001', jabatan: 'Administrator Sistem', role: 'Admin', status: 'Aktif', foto: '' },
+                { user_id: 'USR-002', username: 'staf_uji1', password: 'Staf@Banyuasin2026!', nama: 'Ahmad Fauzi, S.E. (DEMO)', nip: '199002152015031002', jabatan: 'Pengelola Koperasi dan UMKM', role: 'Staf', status: 'Aktif', foto: '' },
+                { user_id: 'USR-003', username: 'staf_uji2', password: 'Staf@Banyuasin2026!', nama: 'Siti Rahmawati, S.Kom. (DEMO)', nip: '199407222019022005', jabatan: 'Analis Perdagangan & Pasar', role: 'Staf', status: 'Aktif', foto: '' }
+            ];
+            let mockUsers = DEFAULT_USERS_DATA;
+            try { const u = JSON.parse(window.localStorage.getItem('mock_users') || 'null'); if (Array.isArray(u) && u.length) mockUsers = u; } catch (e) {}
+            let mockBroadcasts = [
+                { id: 'BC-001', timestamp: new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB', issuer_id: 'USR-001', issuer_name: 'Admin Diskoperindag Banyuasin', category: 'Pemberitahuan', message: 'Selamat datang di GovMonitor Diskoperindag Banyuasin. Seluruh staf diwajibkan melakukan absen harian mulai pukul 07.30 WIB dan mencatat progres kegiatan pada lembar kerja.', created_at: Date.now() - 3600000, expires_at: Date.now() + 86400000 * 3, status: 'Aktif' }
+            ];
+            try { const b = JSON.parse(window.localStorage.getItem('mock_broadcasts') || 'null'); if (Array.isArray(b) && b.length) mockBroadcasts = b; } catch (e) {}
+            let mockReads = [];
+            try { const r = JSON.parse(window.localStorage.getItem('mock_reads') || 'null'); if (Array.isArray(r)) mockReads = r; } catch (e) {}
+            let mockAttendance = [
+                { id: new Date().toISOString().slice(0, 10) + '|USR-002', date: new Date().toISOString().slice(0, 10), user_id: 'USR-002', nama: 'Ahmad Fauzi, S.E. (DEMO)', nip: '199002152015031002', timestamp: new Date().toISOString().slice(0, 10) + ' 07:35:12', at: Date.now() - 7200000 }
+            ];
+            try { const a = JSON.parse(window.localStorage.getItem('mock_attendance') || 'null'); if (Array.isArray(a) && a.length) mockAttendance = a; } catch (e) {}
+            let mockAuditLogs = [
+                { log_id: 'AUD-001', timestamp: '2026-10-11 08:15:30', user_id: 'USR-002', nama_staf: 'Ahmad Fauzi, S.E. (DEMO)', nip: '199002152015031002', cell: 'A2', prev_val: '', new_val: 'Verifikasi Berkas UMKM Banyuasin III', ip_address: '127.0.0.1 (Lokal)', perangkat: 'Browser Desktop', metode: 'Manual', system_context: 'Simulasi Sistem', tab_name: 'Lembar Kerja' }
+            ];
+            try { const al = JSON.parse(window.localStorage.getItem('mock_audit_logs') || 'null'); if (Array.isArray(al) && al.length) mockAuditLogs = al; } catch (e) {}
+
+            function handleMockRPC(method, args) {
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const nowMs = Date.now();
+                if (method === 'authenticateUser') {
+                    const [username, password] = args;
+                    const u = (mockUsers || []).find(x => x.username === username && x.status === 'Aktif');
+                    if (u && (u.password === password || password === 'Admin@Banyuasin2026!' || password === 'Staf@Banyuasin2026!' || password === 'admin123' || password === 'staf123')) {
+                        const token = 'mock_token_' + Date.now();
+                        return { success: true, user: { ...u }, token: token, expires: nowMs + 21600000, idle_ms: 0, monitoring_version: 2 };
+                    }
+                    return { success: false, message: 'Username atau password salah atau akun tidak aktif.' };
+                }
+                if (method === 'validateSession') return { success: true, user: mockUsers[0], idle_ms: 0, monitoring_version: 2 };
+                if (method === 'getUsersFromGAS') return { success: true, users: mockUsers.map(x => ({ ...x })), monitoring_version: 2 };
+                if (method === 'saveUserToGAS') {
+                    const [data] = args;
+                    const idx = mockUsers.findIndex(x => x.user_id === data.user_id || x.username === data.username);
+                    if (idx >= 0) mockUsers[idx] = { ...mockUsers[idx], ...data };
+                    else mockUsers.push({ user_id: 'USR-' + String(mockUsers.length + 1).padStart(3, '0'), ...data });
+                    window.localStorage.setItem('mock_users', JSON.stringify(mockUsers));
+                    return { success: true };
+                }
+                if (method === 'deleteUserFromGAS') {
+                    mockUsers = mockUsers.filter(x => x.user_id !== args[0]);
+                    window.localStorage.setItem('mock_users', JSON.stringify(mockUsers));
+                    return { success: true };
+                }
+                if (method === 'getLatestBroadcastGAS') {
+                    const active = (mockBroadcasts || []).find(b => b.status === 'Aktif' && b.created_at <= nowMs && b.expires_at > nowMs) || mockBroadcasts[0];
+                    const myAttendance = (mockAttendance || []).find(a => a.date === todayStr);
+                    return {
+                        success: true, broadcast_version: 1, server_now: nowMs, date: todayStr, attendance_open: true,
+                        announcement: active ? { ...active, acknowledged: mockReads.some(r => r.broadcast_id === active.id) } : null,
+                        attendance: myAttendance || null,
+                        today_attendance: mockAttendance.filter(a => a.date === todayStr),
+                        broadcasts: mockBroadcasts.map(b => ({
+                            ...b, readers: mockReads.filter(r => r.broadcast_id === b.id),
+                            staff_total: mockUsers.filter(u => u.role === 'Staf').length,
+                            staff_acknowledged: mockReads.filter(r => r.broadcast_id === b.id).length
+                        }))
+                    };
+                }
+                if (method === 'saveBroadcastAnnouncementGAS' || method === 'publishBroadcastAnnouncementGAS') {
+                    const data = args[0] || {};
+                    mockBroadcasts.unshift({
+                        id: 'BC-' + String(mockBroadcasts.length + 1).padStart(3, '0'),
+                        timestamp: new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB',
+                        issuer_id: 'USR-001', issuer_name: 'Admin Diskoperindag Banyuasin',
+                        category: data.category || 'Pemberitahuan', message: data.message || '',
+                        created_at: nowMs, expires_at: nowMs + (Number(data.hours || data.duration_hours) || 24) * 3600000, status: 'Aktif'
+                    });
+                    window.localStorage.setItem('mock_broadcasts', JSON.stringify(mockBroadcasts));
+                    return handleMockRPC('getLatestBroadcastGAS', []);
+                }
+                if (method === 'acknowledgeBroadcastGAS') {
+                    mockReads.push({ broadcast_id: args[0], user_id: 'USR-002', at: nowMs });
+                    window.localStorage.setItem('mock_reads', JSON.stringify(mockReads));
+                    return handleMockRPC('getLatestBroadcastGAS', []);
+                }
+                if (method === 'cancelBroadcastAnnouncementGAS') {
+                    const b = (mockBroadcasts || []).find(x => x.id === args[0]);
+                    if (b) b.status = 'Dibatalkan';
+                    window.localStorage.setItem('mock_broadcasts', JSON.stringify(mockBroadcasts));
+                    return handleMockRPC('getLatestBroadcastGAS', []);
+                }
+                if (method === 'recordDailyAttendanceGAS') {
+                    const key = todayStr + '|USR-002';
+                    if (!mockAttendance.some(a => a.id === key)) {
+                        mockAttendance.unshift({
+                            id: key, date: todayStr, user_id: 'USR-002', nama: 'Ahmad Fauzi, S.E. (DEMO)',
+                            nip: '199002152015031002', timestamp: new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }), at: nowMs
+                        });
+                        window.localStorage.setItem('mock_attendance', JSON.stringify(mockAttendance));
+                    }
+                    return handleMockRPC('getLatestBroadcastGAS', []);
+                }
+                if (method === 'getDailyAttendanceHistoryGAS') {
+                    const date = args[0] || todayStr;
+                    return { success: true, date: date, attendance: mockAttendance.filter(a => !date || a.date === date) };
+                }
+                if (method === 'getReportDataFromGAS') {
+                    const staff = args[2] || 'ALL';
+                    return { success: true, logs: mockAuditLogs.filter(l => staff === 'ALL' || l.user_id === staff) };
+                }
+                if (method === 'getStaffWorksheetsFromGAS' || method === 'getAdminStaffWorksheet') {
+                    const savedSheet = window.localStorage.getItem('mock_sheet_data');
+                    const sheets = savedSheet ? JSON.parse(savedSheet) : [
+                        {
+                            name: 'Lembar Kerja', status: 1, order: 0, row: 50, column: 20,
+                            data: [
+                                [{ v: 'No', m: 'No' }, { v: 'Uraian Kegiatan', m: 'Uraian Kegiatan' }, { v: 'Output / Hasil', m: 'Output / Hasil' }, { v: 'Keterangan', m: 'Keterangan' }],
+                                [{ v: '1', m: '1' }, { v: 'Penyusunan rekapitulasi data koperasi aktif Kab. Banyuasin', m: 'Penyusunan rekapitulasi data koperasi aktif Kab. Banyuasin' }, { v: '1 Dokumen Laporan', m: '1 Dokumen Laporan' }, { v: 'Selesai diverifikasi', m: 'Selesai diverifikasi' }],
+                                [{ v: '2', m: '2' }, { v: 'Monitoring harga bahan pokok di Pasar Pangkalan Balai', m: 'Monitoring harga bahan pokok di Pasar Pangkalan Balai' }, { v: 'Tabel Data Harian', m: 'Tabel Data Harian' }, { v: 'Stabil', m: 'Stabil' }]
+                            ],
+                            config: {}
+                        }
+                    ];
+                    return { success: true, sheets: sheets, updated_at: new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB', revision: 'rev_' + nowMs };
+                }
+                if (method === 'syncFullSheetToGAS') {
+                    const payload = args[0] || {};
+                    if (payload.sheets_data) window.localStorage.setItem('mock_sheet_data', JSON.stringify(payload.sheets_data));
+                    if (payload.audit_logs && payload.audit_logs.length) {
+                        payload.audit_logs.forEach(al => { if (!mockAuditLogs.some(x => x.log_id === al.log_id)) mockAuditLogs.unshift(al); });
+                        window.localStorage.setItem('mock_audit_logs', JSON.stringify(mockAuditLogs));
+                    }
+                    return { success: true, synced_cells: 50, synced_tabs: 1, updated_at: new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB', saved_log_ids: (payload.audit_logs || []).map(x => x.log_id), revision: 'rev_' + nowMs };
+                }
+                if (method === 'getActivityTimeData') {
+                    const staffListActive = (mockUsers || DEFAULT_USERS_DATA).filter(u => u.role === 'Staf');
+                    return {
+                        success: true,
+                        activity_time_version: 1,
+                        server_now: nowMs,
+                        window: { start: nowMs - 86400000, end: nowMs },
+                        staff: staffListActive.map(u => ({
+                            user_id: u.user_id,
+                            name: u.nama,
+                            nip: u.nip || '-',
+                            status: 'Aktif',
+                            totals: { total_ms: 14400000, active_ms: 7200000, idle_ms: 3600000, admin_ms: 0, unknown_ms: 3600000 },
+                            future: [],
+                            idle_exits: 0,
+                            last_logout_at: 0,
+                            logout_reason: ''
+                        })),
+                        events: [
+                            { id: '1', at: nowMs - 7200000, user_id: 'USR-002', name: 'Ahmad Fauzi, S.E. (DEMO)', type: 'login', detail: 'Masuk ke sesi kerja' },
+                            { id: '2', at: nowMs - 7100000, user_id: 'USR-002', name: 'Ahmad Fauzi, S.E. (DEMO)', type: 'edit', detail: 'Memperbarui lembar kerja sel A2' }
+                        ],
+                        event_count: 2
+                    };
+                }
+                if (method === 'getClientAuditContext') return { success: true, context: { json: JSON.stringify({ ip: '127.0.0.1 (Lokal)' }), signature: 'mock_signature' } };
+                if (method === 'getOCRConfigGAS') return { success: true, provider: 'Google Cloud Vision', configured: true, daily_limit: 100 };
+                if (method === 'saveOCRConfigGAS') return { success: true, configured: true, daily_limit: 100 };
+                if (method === 'testOCRConfigGAS') return { success: true, provider: 'Google Cloud Vision (Uji Lokal Siap)' };
+                if (method === 'processGovLensOCR') {
+                    return {
+                        success: true,
+                        text: 'PEMERINTAH KABUPATEN BANYUASIN\nDINAS KOPERASI, USAHA KECIL DAN MENENGAH, PERINDUSTRIAN DAN PERDAGANGAN\nKOMPLEK PERKANTORAN PEMKAB BANYUASIN\n\nSURAT TUGAS\nNomor: 090/045/Diskop-DAG/2026\n\nTentang: Pemantauan dan Pendataan UMKM Banyuasin',
+                        provider: 'GovLens OCR (Simulasi)'
+                    };
+                }
+                if (method === 'getSupervisorNotes') return { success: true, notes: [{ time: '10:00 WIB', admin: 'Admin Diskoperindag Banyuasin', text: 'Tingkatkan progres verifikasi berkas UMKM untuk laporan triwulan.' }] };
+                if (method === 'saveSupervisorNote') return { success: true };
+                if (method === 'getGovAzanConfig') return { success: true, standard: '', subuh: '' };
+                if (method === 'getGovAzanSchedule') return { code: 200, status: 'OK', data: { timings: { Fajr: '04:38', Dhuhr: '11:58', Asr: '15:10', Maghrib: '18:02', Isha: '19:11' } } };
+                if (method === 'getEnvironmentFromGAS') {
+                    return {
+                        success: true,
+                        weather: { temperature: 31, feels_like: 36, humidity: 78, code: 1, wind: 8, minimum: 24, maximum: 33, rain_probability: 20, timezone: 'Asia/Jakarta' },
+                        air: { aqi: 45, pm25: 11, time: Date.now(), fetched_at: Date.now(), stale: false }
+                    };
+                }
+                if (method === 'endStaffSession' || method === 'logoutSession') return { success: true, ended_at: nowMs, reason: 'manual' };
+                if (method === 'reportArchiveGAS') return { success: true, number: 'LAP-001/2026', public_token: '0'.repeat(64) };
+                if (method === 'getRuntimeConfigGAS') return { success: true, version: '2026.10.07-new-2', deployment_url: '', timezone: 'Asia/Jakarta' };
+                return { success: true };
+            }
+
+            function createRunner(successCb, failureCb) {
+                successCb = successCb || (() => { });
+                failureCb = failureCb || (() => { });
+                return new Proxy({}, {
+                    get: function(_, method) {
+                        if (method === 'withSuccessHandler') return function(cb) { return createRunner(cb, failureCb); };
+                        if (method === 'withFailureHandler') return function(cb) { return createRunner(successCb, cb); };
+                        if (method === 'withUserObject') return function() { return createRunner(successCb, failureCb); };
+                        return function(...args) {
+                            setTimeout(function() {
+                                try {
+                                    const res = handleMockRPC(method, args);
+                                    successCb(res);
+                                } catch (e) { failureCb(e); }
+                            }, 20);
+                        };
+                    }
+                });
+            }
+
+            window.google = {
+                script: {
+                    get run() { return createRunner(); },
+                    run: createRunner()
+                }
+            };
+        })();
+    
+
+// Smart Error Boundary: Melindungi aplikasi dari error pihak ketiga, ekstensi & document.write
+(function() {
+    window.addEventListener('error', function(e) {
+        const msg = (e.message || '').toLowerCase();
+        // Abaikan error non-kritis dari browser, ekstensi pihak ketiga, audio, dan document.write
+        if (
+            msg.includes('resizeobserver') ||
+            msg.includes('audiocontext') ||
+            msg.includes('favicon') ||
+            msg.includes('extension') ||
+            msg.includes('write') || msg.includes('unexpected token') || msg.includes('syntaxerror') || msg.includes('document.write') || msg.includes('failed to execute') ||
+            (msg.includes('failed to fetch') && (e.filename || '').includes('open-meteo'))
+        ) {
+            console.warn('[GovMonitor Non-Critical Warning Ignored]:', e.message, e.filename);
+            return;
+        }
+        
+        console.error('[GovMonitor Error Boundary]:', e.message, e.filename, e.lineno);
+        const b = document.getElementById('gm-load-error');
+        // Jangan tampilkan banner jika form login sudah siap di layar
+        const formReady = document.getElementById('login-username') && document.getElementById('form-login');
+        if (b && !window.currentUser && !formReady) {
+            b.style.display = 'block';
+            b.innerHTML = 'Aplikasi sedang memuat pustaka antarmuka... ' + 
+                '<a href="javascript:location.reload()" style="color:#fff;text-decoration:underline;margin-left:8px;">Muat Ulang Halaman</a>';
+        }
+    });
+
+    // Peringatan hanya jika jQuery benar-benar gagal setelah 15 detik
+    setTimeout(function() {
+        if (!window.jQuery) {
+            const b = document.getElementById('gm-load-error');
+            if (b && !window.currentUser && !document.getElementById('login-username')) {
+                b.style.display = 'block';
+                b.innerHTML = 'Pustaka antarmuka sedang memuat atau terhalang jaringan. ' +
+                    '<a href="javascript:location.reload()" style="color:#fff;text-decoration:underline;margin-left:8px;">Klik di sini untuk muat ulang</a>';
+            }
+        }
+    }, 15000);
+})();
+</script>

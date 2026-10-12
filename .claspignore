@@ -1,0 +1,11 @@
+# Abaikan semua file kecuali file produksi Apps Script
+**/*
+!Code.gs
+!Index.html
+!Stylesheet.html
+!Javascript_Core.html
+!Javascript_Auth.html
+!Javascript_Sheets.html
+!Javascript_App.html
+!Javascript_Widgets.html
+!appsscript.json

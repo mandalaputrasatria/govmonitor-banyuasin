@@ -1,0 +1,1139 @@
+<script>
+/* ========================================================
+   GovMonitor Banyuasin · Javascript_App
+   Admin Monitoring, Chat Real-time, Absensi & Manajemen Tema
+   ======================================================== */
+        /* GOVAZAN_CORE_START */
+        const GovAzanCore = (() => {
+            const keys = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'], names = { Fajr: 'Subuh', Dhuhr: 'Zuhur', Asr: 'Asar', Maghrib: 'Magrib', Isha: 'Isya' };
+            const offsets = { 'Asia/Jakarta': '+07:00', 'Asia/Makassar': '+08:00', 'Asia/Jayapura': '+09:00' };
+            function dateAt(now, tz) { const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now)); const f = k => (p.find(x => x.type === k)?.value || '01'); return f('year') + '-' + f('month') + '-' + f('day'); }
+            function addDay(date, n = 1) { const d = new Date(date + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+            function name(k, date) { return k === 'Dhuhr' && new Date(date + 'T12:00:00Z').getUTCDay() === 5 ? 'Salat Jumat' : names[k]; }
+            function events(record, locationKey) { return keys.map(k => ({ key: k, name: name(k, record.date), time: record.times[k], date: record.date, at: Date.parse(record.date + 'T' + record.times[k] + ':00' + offsets[record.timezone]), id: locationKey + '|' + record.date + '|' + k })); }
+            function due(events, previous, now) { return previous == null ? [] : events.filter(e => e.at > previous && e.at <= now && now - e.at <= 90000); }
+            function validate(json, date, tz) { const d = json.data, p = date.split('-'), expected = p[2] + '-' + p[1] + '-' + p[0]; if (json.code !== 200 || !d || d.date?.gregorian?.date !== expected || d.meta?.timezone !== tz || Number(d.meta?.method?.id) !== 20) throw new Error('Sumber mengembalikan tanggal, zona waktu, atau metode berbeda.'); const times = {}; keys.forEach(k => { const m = String(d.timings?.[k] || '').match(/^(\d{2}):(\d{2})/); if (!m || +m[1] > 23 || +m[2] > 59) throw new Error('Jadwal dari sumber tidak valid.'); times[k] = m[1] + ':' + m[2]; }); return { success: true, date, timezone: tz, times, source: 'Aladhan — perhitungan metode Kemenag (20)', updated_at: new Date().toISOString(), cached: false }; }
+            function https(url) { try { return new URL(url).protocol === 'https:'; } catch (e) { return false; } }
+            return { keys, names, dateAt, addDay, name, events, due, validate, https };
+        })();
+        /* GOVAZAN_CORE_END */
+
+        /* GOVAZAN_CONTROLLER_START */
+        const gpLocations = { banyuasin: { name: 'Banyuasin', lat: -2.8833, lng: 104.3833, tz: 'Asia/Jakarta' }, palembang: { name: 'Palembang', lat: -2.9761, lng: 104.7754, tz: 'Asia/Jakarta' }, lahat: { name: 'Lahat', lat: -3.786, lng: 103.5428, tz: 'Asia/Jakarta' }, pagaralam: { name: 'Pagar Alam', lat: -4.0211, lng: 103.254, tz: 'Asia/Jakarta' }, jakarta: { name: 'Jakarta', lat: -6.2088, lng: 106.8456, tz: 'Asia/Jakarta' }, makassar: { name: 'Makassar', lat: -5.1477, lng: 119.4327, tz: 'Asia/Makassar' }, jayapura: { name: 'Jayapura', lat: -2.5337, lng: 140.7181, tz: 'Asia/Jayapura' } };
+        const gpRemote = { standard: 'https://archive.org/download/adhan.recordings.from.doha.qatar/Adhan_Doha_Qatar_02_Dhuhr_Adhan.mp3', subuh: 'https://archive.org/download/adhan.recordings.from.doha.qatar/Adhan_Doha_Qatar_01_Fajr_Adhan.mp3' };
+        const gp = { prefs: null, records: new Map(), requests: new Map(), activated: false, last: null, viewDate: '', today: '', pending: null, testTimer: 0, epoch: 0, audioBusy: false, serverAudio: {} };
+        const gpAudio = document.getElementById('gp-native-audio') || new Audio(); gpAudio.preload = 'none';
+        function gpEl(id) { return document.getElementById(id); }
+        function gpMessage(text, kind = 'info') { const e = gpEl('gp-message'); e.textContent = text; e.dataset.kind = kind; }
+        function gpDefaults() { return { location: 'banyuasin', coords: {}, volume: 70, recording: 'doha', standard: '', subuh: '', mutedDate: '', enabled: { Fajr: true, Dhuhr: true, Asr: true, Maghrib: true, Isha: true } }; }
+        function gpStoreKey() { return 'govazan_prefs_' + (currentUser?.user_id || 'preview'); }
+        function gpSavePrefs() { try { localStorage.setItem(gpStoreKey(), JSON.stringify(gp.prefs)); } catch (e) { gpMessage('Pengaturan hanya berlaku sementara; penyimpanan browser tidak tersedia.', 'error'); } }
+        function gpLocation() { const base = gpLocations[gp.prefs.location] || gpLocations.banyuasin, saved = gp.prefs.coords[gp.prefs.location]; return saved && Number.isFinite(saved.lat) && Number.isFinite(saved.lng) && saved.lat >= -12 && saved.lat <= 8 && saved.lng >= 90 && saved.lng <= 142 ? { ...base, lat: saved.lat, lng: saved.lng } : base; }
+        function gpLocationKey() { const l = gpLocation(); return gp.prefs.location + ':' + l.lat.toFixed(4) + ':' + l.lng.toFixed(4) + ':' + l.tz; }
+        function gpRecordKey(date) { return gpLocationKey() + ':' + date; }
+        function gpOnLogin() {
+            gpStopAudio(); gp.activated = false; gp.last = null; gp.pending = null; gpEl('gp-manual-play')?.classList.add('d-none'); gp.serverAudio = {}; gp.epoch++;
+            let saved = {}; try { saved = JSON.parse(localStorage.getItem(gpStoreKey()) || '{}'); } catch (e) { }
+            gp.prefs = { ...gpDefaults(), ...saved, coords: saved.coords || {}, enabled: { ...gpDefaults().enabled, ...saved.enabled } };
+            if (!gpLocations[gp.prefs.location]) gp.prefs.location = 'banyuasin'; gp.prefs.volume = Math.max(0, Math.min(100, Number(gp.prefs.volume) || 0));
+            gpEl('gp-location').value = gp.prefs.location; gpEl('gp-recording').value = gp.prefs.recording; gpEl('gp-standard-url').value = gp.prefs.standard; gpEl('gp-subuh-url').value = gp.prefs.subuh; gpEl('gp-volume').value = gp.prefs.volume;
+            gpRecordingChanged(); gpChangeVolume(false); gpFillCoords(); gpEl('gp-day').value = 'today'; gpSetViewDate(); gpRefreshAudioStatus(); gpLoadCurrent();
+            if (IS_GAS) gasRun().withSuccessHandler(res => { gp.serverAudio = { standard: res.standard, subuh: res.subuh }; if (res.standard || res.subuh) gpEl('gp-recording').options[0].textContent = 'Rekaman konfigurasi instansi'; }).withFailureHandler(e => gpMessage('Konfigurasi instansi belum dimuat; memakai rekaman bawaan. ' + (e.message || String(e)), 'error')).getGovAzanConfig();
+        }
+        function gpFillCoords() { const l = gpLocation(); gpEl('gp-latitude').value = l.lat; gpEl('gp-longitude').value = l.lng; gpEl('prayer-city-label').textContent = l.name; gpEl('gp-zone-label').textContent = l.tz === 'Asia/Jakarta' ? 'WIB' : l.tz === 'Asia/Makassar' ? 'WITA' : 'WIT'; }
+        function gpSetViewDate() { const today = GovAzanCore.dateAt(Date.now(), gpLocation().tz), choice = gpEl('gp-day').value; gp.viewDate = choice === 'tomorrow' ? GovAzanCore.addDay(today) : choice === 'custom' ? gpEl('gp-date').value : today; gpEl('gp-date').value = gp.viewDate; gpEl('gp-date').disabled = choice !== 'custom'; }
+        function gpRefreshSchedules() { gp.records.clear(); gpLoadCurrent(); }
+        function gpChangeDay() { gpSetViewDate(); gpLoadView(); }
+        function gpChangeDate() { gp.viewDate = gpEl('gp-date').value; gpLoadView(); }
+        function gpChangeLocation() { gpStopAudio(); gp.activated = false; gp.pending = null; gp.last = null; gp.epoch++; gpEl('gp-manual-play')?.classList.add('d-none'); gp.prefs.location = gpEl('gp-location').value; gpSavePrefs(); gpFillCoords(); gpSetViewDate(); gpRefreshAudioStatus(); gpLoadCurrent(); }
+        function gpRecordingChanged() { gpEl('gp-custom-audio')?.classList.toggle('d-none', gpEl('gp-recording').value !== 'custom'); }
+        function gpSaveSettings() {
+            const standard = gpEl('gp-standard-url').value.trim(), subuh = gpEl('gp-subuh-url').value.trim(), mode = gpEl('gp-recording').value;
+            if (mode === 'custom' && (!GovAzanCore.https(standard) || !GovAzanCore.https(subuh))) return gpMessage('Isi dua URL HTTPS langsung menuju audio standar dan Subuh.', 'error');
+            const lat = Number(gpEl('gp-latitude').value), lng = Number(gpEl('gp-longitude').value); if (!gpEl('gp-latitude').value.trim() || !gpEl('gp-longitude').value.trim() || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -12 || lat > 8 || lng < 90 || lng > 142) return gpMessage('Koordinat harus berada di wilayah Indonesia.', 'error');
+            gpStopAudio(); gp.activated = false; gp.last = null; gp.pending = null; gp.epoch++; gp.prefs.recording = mode; gp.prefs.standard = standard; gp.prefs.subuh = subuh; gp.prefs.coords[gp.prefs.location] = { lat, lng }; gpSavePrefs(); gpFillCoords(); gpLoadCurrent(); gpRefreshAudioStatus(); gpMessage('Pengaturan disimpan. Aktifkan ulang audio untuk menguji rekaman.', 'success');
+        }
+        function gpChangeVolume(save = true) { if (!gp.prefs) return; gp.prefs.volume = Number(gpEl('gp-volume').value); gpAudio.volume = gp.prefs.volume / 100; gpEl('gp-volume-value').textContent = gp.prefs.volume + '%'; if (save) gpSavePrefs(); }
+        function gpMuted() { return gp.prefs?.mutedDate === GovAzanCore.dateAt(Date.now(), gpLocation().tz); }
+        function toggleAzanMute() { if (!gp.prefs) return; gp.prefs.mutedDate = gpMuted() ? '' : GovAzanCore.dateAt(Date.now(), gpLocation().tz); if (gpMuted()) gpStopAudio(); gpSavePrefs(); gpRefreshAudioStatus(); }
+        function gpRefreshAudioStatus() { if (!gp.prefs) return; gpEl('gp-activate').innerHTML = gp.activated ? '<i class="fas fa-check me-2"></i>Audio aktif · uji ulang' : '<i class="fas fa-volume-high me-2"></i>Aktifkan Azan Otomatis'; gpEl('gp-audio-status').textContent = gpMuted() ? 'Disenyapkan sampai pergantian hari.' : gp.activated ? 'Audio aktif untuk sesi ini. Halaman harus tetap terbuka.' : 'Audio belum diaktifkan pada sesi ini.'; gpEl('gp-mute')?.classList.toggle('gp-muted-active', gpMuted()); gpEl('gp-mute').title = gpMuted() ? 'Batalkan senyap' : 'Senyapkan hari ini'; }
+        async function gpGetRecord(date) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Math.abs(Date.parse(date + 'T00:00:00Z') - Date.now()) > 370 * 86400000) throw new Error('Pilih tanggal dalam rentang satu tahun.');
+            const key = gpRecordKey(date), loc = gpLocation(); if (gp.records.has(key)) return gp.records.get(key); if (gp.requests.has(key)) return gp.requests.get(key);
+            const work = (async () => {
+                let record;
+                try {
+                    if (IS_GAS) record = await new Promise((resolve, reject) => gasRun().withSuccessHandler(resolve).withFailureHandler(reject).getGovAzanSchedule(loc.lat, loc.lng, loc.tz, date));
+                    else { const p = date.split('-'), url = 'https://api.aladhan.com/v1/timings/' + p[2] + '-' + p[1] + '-' + p[0] + '?latitude=' + loc.lat + '&longitude=' + loc.lng + '&method=20&timezonestring=' + encodeURIComponent(loc.tz), ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 15000); try { const response = await fetch(url, { signal: ctl.signal }); if (!response.ok) throw new Error('Layanan jadwal gagal (HTTP ' + response.status + ').'); record = GovAzanCore.validate(await response.json(), date, loc.tz); } finally { clearTimeout(timer); } }
+                    if (record.date !== date || record.timezone !== loc.tz) throw new Error('Tanggal atau zona waktu jadwal berbeda.');
+                    gp.records.set(key, record); try { localStorage.setItem('govazan_schedule_' + key, JSON.stringify(record)); } catch (e) { } return record;
+                } catch (e) { try { const cached = JSON.parse(localStorage.getItem('govazan_schedule_' + key) || 'null'); if (cached?.date === date && cached.timezone === loc.tz && GovAzanCore.keys.every(k => /^\d{2}:\d{2}$/.test(cached.times?.[k]))) { cached.cached = true; gp.records.set(key, cached); return cached; } } catch (x) { } throw e; }
+            })(); gp.requests.set(key, work); try { return await work; } finally { gp.requests.delete(key); }
+        }
+        async function gpLoadView() { const key = gpRecordKey(gp.viewDate); gpEl('gp-schedule').innerHTML = '<p class="gp-muted">Memuat jadwal...</p>'; try { await gpGetRecord(gp.viewDate); if (key === gpRecordKey(gp.viewDate)) gpRenderSchedule(); } catch (e) { if (key !== gpRecordKey(gp.viewDate)) return; gpEl('gp-schedule').innerHTML = '<p class="gp-muted">Jadwal belum tersedia.</p>'; gpEl('gp-schedule-source').textContent = 'Tidak ada jadwal cadangan untuk tanggal dan lokasi ini.'; gpMessage(e.message || 'Jadwal gagal dimuat.', 'error'); } }
+        async function gpLoadCurrent() { if (!currentUser || !gp.prefs) return; const key = gpLocationKey(), today = GovAzanCore.dateAt(Date.now(), gpLocation().tz); gp.today = today; gp.last = Date.now(); gpEl('prayer-next-name').textContent = 'Memuat jadwal'; gpEl('prayer-countdown').textContent = '--:--:--'; await Promise.allSettled([gpGetRecord(today), gpGetRecord(GovAzanCore.addDay(today)), gpLoadView()]); if (key === gpLocationKey()) gpTick(); }
+        function gpRenderSchedule() { const record = gp.records.get(gpRecordKey(gp.viewDate)); if (!record) return; const now = Date.now(), events = GovAzanCore.events(record, gpLocationKey()), next = (events || []).find(e => e.at > now); const container = gpEl('gp-schedule'); container.replaceChildren(); events.forEach(e => { const row = document.createElement('div'); row.className = 'gp-row' + (e.at <= now ? ' gp-past' : next?.key === e.key ? ' gp-next' : ''); const name = document.createElement('span'); name.className = 'gp-row-name'; name.textContent = e.name; const time = document.createElement('span'); time.className = 'gp-row-time'; time.textContent = e.time; const status = document.createElement('span'); status.className = 'gp-row-state'; status.textContent = gp.viewDate === gp.today ? (e.at <= now ? 'Lewat' : next?.key === e.key ? 'Berikutnya' : '') : ' '; const label = document.createElement('label'), checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = gp.prefs.enabled[e.key]; checkbox.setAttribute('aria-label', 'Aktifkan audio ' + e.name); checkbox.addEventListener('change', () => { gp.prefs.enabled[e.key] = checkbox.checked; gpSavePrefs(); }); label.append(checkbox, document.createTextNode('Audio')); row.append(name, time, status, label); container.append(row); }); gpEl('gp-schedule-source').textContent = record.source + ' · ' + (record.cached ? 'jadwal tersimpan' : 'dimuat') + ' ' + new Date(record.updated_at).toLocaleString('id-ID', { timeZone: gpLocation().tz }); }
+        function gpTick() {
+            if (!currentUser || !gp.prefs) { gp.last = null; return; } const now = Date.now(), today = GovAzanCore.dateAt(now, gpLocation().tz); updateDigitalClock();
+            if (today !== gp.today) { gp.today = today; gpSetViewDate(); gpRefreshAudioStatus(); gpLoadCurrent(); return; }
+            const events = [today, GovAzanCore.addDay(today)].flatMap(date => { const record = gp.records.get(gpRecordKey(date)); return record ? GovAzanCore.events(record, gpLocationKey()) : []; });
+            const previous = gp.last; gp.last = now; const due = GovAzanCore.due(events, previous, now); due.forEach(event => gpHandleDue(event));
+            const next = (events || []).find(e => e.at > now); if (next) { const s = Math.floor((next.at - now) / 1000); gpEl('prayer-next-name').textContent = next.name + (next.date !== today ? ' (besok)' : ''); gpEl('prayer-countdown').textContent = [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(x => String(x).padStart(2, '0')).join(':'); }
+            else { gpEl('prayer-next-name').textContent = 'Jadwal belum tersedia'; gpEl('prayer-countdown').textContent = '--:--:--'; }
+            if (gpEl('gp-day').value === 'today' && gp.renderMinute !== Math.floor(now / 60000)) { gp.renderMinute = Math.floor(now / 60000); gpRenderSchedule(); }
+        }
+        async function gpClaim(id) { const claim = () => { try { const key = 'govazan_played_' + id; if (localStorage.getItem(key)) return false; localStorage.setItem(key, String(Date.now())); return true; } catch (e) { return !gp.claimed?.has(id) && (gp.claimed ??= new Set()).add(id); } }; if (navigator.locks?.request) { try { return await navigator.locks.request('govazan:' + id, claim); } catch (e) { } } return claim(); }
+        async function gpHandleDue(event) { const location = gpLocationKey(); if (!await gpClaim(event.id) || !currentUser || location !== gpLocationKey()) return; gp.pending = event; Swal.fire({ icon: 'info', title: 'Waktu ' + event.name + ' telah tiba', text: 'Jadwal ' + gpLocation().name + ' · ' + event.time, toast: true, position: 'top-end', timer: 8000, showConfirmButton: false }); gpEl('gp-manual-play')?.classList.remove('d-none'); if (!gp.prefs.enabled[event.key] || gpMuted()) return gpMessage('Waktu ' + event.name + ' tiba. Audio disenyapkan atau dinonaktifkan untuk waktu ini.'); if (!gp.activated) return gpMessage('Waktu ' + event.name + ' tiba. Klik Putar azan sekarang atau aktifkan audio untuk jadwal berikutnya.'); try { if (!await gpPlay(event.key === 'Fajr' ? 'subuh' : 'standard')) return; gpMessage('Waktu ' + event.name + ' tiba. Rekaman azan sedang diputar.', 'success'); gpEl('gp-manual-play')?.classList.add('d-none'); } catch (e) { gp.activated = false; gpRefreshAudioStatus(); gpMessage('Audio otomatis belum diputar: ' + e.message + ' Klik Putar azan sekarang.', 'error'); } }
+        function gpAudioURL(kind) { if (gp.prefs.recording === 'custom') return gp.prefs[kind]; return gp.serverAudio[kind] || gpRemote[kind]; }
+        async function gpPlay(kind) {
+            const url = gpAudioURL(kind); if (IS_GAS || gp.prefs.recording === 'custom') { if (!GovAzanCore.https(url)) throw new Error('URL rekaman harus HTTPS.'); }
+            gpStopAudio(); const epoch = ++gp.epoch; if (typeof gd !== 'undefined' && (gd.listening || gd.starting)) pauseDikteRecording(true);
+            if (gpAudio.getAttribute?.('src') !== url) gpAudio.src = url; gpAudio.volume = gp.prefs.volume / 100;
+            gpMessage('Memuat rekaman ' + (kind === 'subuh' ? 'Subuh' : 'standar') + '… Tunggu hingga suara mulai terdengar.');
+            let timer; try { await Promise.race([gpAudio.play(), new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('Audio belum tersedia setelah 20 detik. Periksa internet atau ganti URL rekaman.'), { name: 'AudioTimeout' })), 20000); })]); if (epoch !== gp.epoch) return false; return true; }
+            catch (e) { if (epoch !== gp.epoch) return false; gpAudio.pause(); throw new Error(e.name === 'NotAllowedError' ? 'Browser memblokir audio. Klik Play pada pemutar di atas, lalu coba aktivasi kembali.' : e.name === 'AudioTimeout' ? e.message : 'Rekaman gagal dimuat. Periksa koneksi dan URL audio.'); }
+            finally { clearTimeout(timer); }
+        }
+        function gpStopAudio() { clearTimeout(gp.testTimer); gp.testTimer = 0; gp.epoch++; gpAudio.pause(); try { gpAudio.currentTime = 0; } catch (e) { } }
+        async function gpActivateAudio() { if (!currentUser || gp.audioBusy) return; if (gp.prefs.volume === 0) return gpMessage('Volume masih 0%. Naikkan volume sebelum mengaktifkan audio.', 'error'); gp.audioBusy = true; gpEl('gp-activate').disabled = true; try { if (await gpPlay('standard')) { gp.activated = true; gp.prefs.mutedDate = ''; gpSavePrefs(); gpRefreshAudioStatus(); gpMessage('Uji rekaman berhasil. Audio diaktifkan untuk sesi ini; cuplikan berhenti dalam 5 detik.', 'success'); gp.testTimer = setTimeout(gpStopAudio, 5000); } } catch (e) { gp.activated = false; gpMessage(e.message, 'error'); gpRefreshAudioStatus(); } finally { gp.audioBusy = false; gpEl('gp-activate').disabled = false; } }
+        async function testAzanAudio(kind = 'standard') { if (!currentUser) return; try { if (await gpPlay(kind)) { gpMessage('Memutar cuplikan rekaman ' + (kind === 'subuh' ? 'Subuh' : 'standar') + ' selama 8 detik.', 'success'); gp.testTimer = setTimeout(gpStopAudio, 8000); } } catch (e) { gpMessage(e.message, 'error'); } }
+        async function gpPlayPending() { if (!gp.pending) return; try { if (!currentUser || !await gpPlay(gp.pending.key === 'Fajr' ? 'subuh' : 'standard')) return; gpEl('gp-manual-play')?.classList.add('d-none'); gpMessage('Rekaman azan diputar atas permintaan Anda.', 'success'); } catch (e) { gpMessage(e.message, 'error'); } }
+        function updateDigitalClock() { const tz = gp.prefs ? gpLocation().tz : 'Asia/Jakarta', now = new Date(); gpEl('digital-clock-time').textContent = now.toLocaleTimeString('id-ID', { timeZone: tz }); gpEl('digital-clock-date').textContent = now.toLocaleDateString('id-ID', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short' }); }
+        function initPrayerWidget() { updateDigitalClock(); if (prayerCountdownInterval) clearInterval(prayerCountdownInterval); prayerCountdownInterval = setInterval(gpTick, 1000); gpAudio.addEventListener('play', () => { if (typeof gd !== 'undefined' && (gd.listening || gd.starting)) pauseDikteRecording(true); }); gpAudio.addEventListener('error', () => { if (!currentUser) return; gp.activated = false; gpRefreshAudioStatus(); gpMessage('Berkas audio tidak dapat diputar. Periksa koneksi atau gunakan URL rekaman sendiri.', 'error'); }); window.addEventListener('online', () => { gp.records.clear(); if (currentUser) gpLoadCurrent(); }); }
+        function togglePrayerCompact() { const trigger = gpEl('prayer-widget-container'); bootstrap.Dropdown.getOrCreateInstance(trigger).toggle(); }
+        Object.assign(window, { gpRefreshSchedules, gpChangeLocation, gpChangeDay, gpChangeDate, gpRecordingChanged, gpSaveSettings, gpChangeVolume, gpActivateAudio, gpStopAudio, gpPlayPending });
+        /* GOVAZAN_CONTROLLER_END */
+
+        function refreshDashboardData() {
+            $('#stat-active-staff').text(staffList.filter(s => s.role === 'Staf' && s.status === 'Aktif').length);
+            $('#stat-total-input').text(auditLogsData.length);
+            $('#stat-stt-count').text(auditLogsData.filter(l => l.method === 'Speech-to-Text').length);
+            $('#stat-last-cell').text(auditLogsData[0]?.cell || '—');
+            renderOverviewRecent();
+            gmDashboardProfiles();
+        }
+
+        function renderOverviewRecent() {
+            let html = '';
+            auditLogsData.slice(0, 5).forEach(item => {
+                html += `
+                    <tr>
+                        <td><small class="text-muted"><i class="far fa-clock me-1"></i>${escapeHtml(item.timestamp)}</small></td>
+                        <td class="fw-bold text-dark">${escapeHtml(item.nama_staf)}</td>
+                        <td><span class="badge bg-primary font-monospace">${escapeHtml(item.cell)}</span></td>
+                        <td><span class="text-dark fw-semibold">${escapeHtml(item.new_val)}</span></td>
+                        <td><span class="${item.method === 'Speech-to-Text' ? 'method-badge-stt' : (item.method === 'GovLens OCR' ? 'method-badge-ocr' : 'method-badge-manual')}">${escapeHtml(item.method)}</span></td>
+                    </tr>
+                `;
+            });
+            $('#tbody-overview-recent').html(html || '<tr><td colspan="5" class="text-center text-muted">Belum ada aktivitas.</td></tr>');
+        }
+
+        function initAdminDashboard() {
+            fetchUsersFromGAS();
+            syncStaffData();
+            refreshDashboardData();
+            initAuditLogsDataTable();
+            renderActivityStream();
+            renderTimeTrackingCards();
+            renderLivePeekGrid();
+            generateReport();
+        }
+
+        function initAuditLogsDataTable() { gmSystemEnsure(); }
+
+        function switchAdminTab(tabId, element) {
+            gmBroadcastRender(); gmBroadcastSync();
+            $('.admin-tab-content').addClass('d-none');
+            $('#' + tabId).removeClass('d-none');
+            $('.admin-sidebar .nav-link').removeClass('active');
+            if (element) $(element).addClass('active');
+
+            if (tabId === 'tab-live-peek') renderLivePeekGrid();
+            else if (tabId === 'tab-activity-time') { renderActivityStream(); renderTimeTrackingCards(); }
+            else if (tabId === 'tab-audit-logs') updateAuditLogsTable();
+            else if (tabId === 'tab-staff-mgmt') renderStaffTable();
+            else if (tabId === 'tab-reports') generateReport();
+        }
+
+        function syncStaffData() {
+            renderStaffTable();
+            let recapDropdownHtml = '<option value="ALL" selected>-- Semua Pegawai / Staf Pemkab --</option>';
+            let activityDropdownHtml = '<option value="ALL">-- Semua Staf Pemkab Banyuasin --</option>';
+            let auditDropdownHtml = '<option value="ALL">-- Semua Staf Pemkab Banyuasin --</option>';
+
+            staffList.forEach(s => {
+                recapDropdownHtml += `<option value="${escapeHtml(s.user_id)}">${escapeHtml(s.nama)} (${escapeHtml(s.jabatan)})</option>`;
+                activityDropdownHtml += `<option value="${escapeHtml(s.user_id)}">${escapeHtml(s.nama)} (${escapeHtml(s.jabatan)})</option>`;
+                auditDropdownHtml += `<option value="${escapeHtml(s.user_id)}">${escapeHtml(s.nama)} (${escapeHtml(s.jabatan)})</option>`;
+            });
+
+            const selections = { recap: $('#recap-staff').val(), activity: $('#activity-filter-staff').val(), audit: $('#audit-filter-staff').val() };
+            $('#recap-staff').html(recapDropdownHtml);
+            $('#activity-filter-staff').html(activityDropdownHtml);
+            $('#audit-filter-staff').html(auditDropdownHtml);
+            $('#recap-staff').val(selections.recap || 'ALL'); $('#activity-filter-staff').val(selections.activity || 'ALL'); $('#audit-filter-staff').val(selections.audit || 'ALL');
+            renderTimeTrackingCards(); renderLivePeekGrid();
+        }
+
+        function renderActivityStream(filterStaffId) { gmActivityEnsure(); }
+        function filterActivityStream(staffId) { if (staffId) $('#activity-filter-staff').val(staffId); gmActivityLoad(true); }
+        function renderTimeTrackingCards() { gmActivityRenderTimes(); }
+
+        function renderStaffTable() {
+            let html = '';
+            staffList.forEach(s => {
+                html += `
+                    <tr>
+                        <td><img src="${escapeHtml(s.foto || GM_LOGO)}" class="avatar-box" alt="Foto"></td>
+                        <td class="fw-bold text-dark">${escapeHtml(s.nama)}</td>
+                        <td><small class="text-muted font-monospace">${escapeHtml(s.nip)}</small></td>
+                        <td><span class="badge bg-info bg-opacity-10 text-info border border-info-subtle">${escapeHtml(s.jabatan)}</span></td>
+                        <td><span class="badge ${s.role === 'Admin' ? 'bg-warning text-dark' : 'bg-primary'}">${escapeHtml(s.role)}</span></td>
+                        <td><span class="badge bg-success">${escapeHtml(s.status)}</span></td>
+                        <td>
+                            <button onclick="window.editUser('${escapeHtml(s.user_id)}')" class="btn btn-outline-primary btn-sm me-1"><i class="fas fa-edit"></i></button>
+                            <button onclick="window.deleteUser('${escapeHtml(s.user_id)}')" class="btn btn-outline-danger btn-sm"><i class="fas fa-trash-alt"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+            $('#tbody-staff-list').html(html);
+        }
+
+        function openModalAddUser() {
+            $('#modalUserTitle').html('<i class="fas fa-user-plus text-primary me-2"></i>Tambah Staf Baru');
+            $('#crud-user-id').val('');
+            $('#form-user-crud')[0].reset();
+            $('#preview-foto-box').hide(); $('#preview-foto-img').attr('src', ''); $('#crud-password').prop('required', true).attr('minlength', IS_GAS ? 10 : 6);
+            const modal = new bootstrap.Modal(document.getElementById('modalUser'));
+            modal.show();
+        }
+
+        function editUser(userId) {
+            const user = (staffList || []).find(u => u.user_id === userId);
+            if (!user) return;
+            $('#modalUserTitle').text('Edit Data Staf');
+            $('#crud-user-id').val(user.user_id);
+            $('#crud-nama').val(user.nama);
+            $('#crud-nip').val(user.nip);
+            $('#crud-jabatan').val(user.jabatan);
+            $('#crud-username').val(user.username);
+            $('#preview-foto-img').attr('src', user.foto || ''); $('#preview-foto-box').toggle(!!user.foto); $('#crud-password').prop('required', false);
+            $('#crud-password').val('').attr('placeholder', 'Kosongkan untuk mempertahankan password');
+            $('#crud-role').val(user.role);
+            if (user.foto) {
+                $('#preview-foto-img').attr('src', user.foto);
+                $('#preview-foto-box').show();
+            }
+            const modal = new bootstrap.Modal(document.getElementById('modalUser'));
+            modal.show();
+        }
+
+        function previewImageFile(e) { const file = e.target.files[0]; if (!file) return; if (!/^image\//.test(file.type)) return Swal.fire('Format foto', 'Pilih berkas gambar.', 'warning'); if (file.size > 5 * 1024 * 1024) return Swal.fire('Foto terlalu besar', 'Maksimal 5 MB.', 'warning'); const reader = new FileReader(); reader.onload = evt => { const img = new Image(); img.onload = () => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = 128; const ctx = canvas.getContext('2d'), scale = Math.max(128 / img.width, 128 / img.height); ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 128, 128); ctx.drawImage(img, (128 - img.width * scale) / 2, (128 - img.height * scale) / 2, img.width * scale, img.height * scale); const data = canvas.toDataURL('image/jpeg', .65); if (data.length > 45000) return Swal.fire('Foto terlalu besar', 'Gunakan foto dengan detail lebih sederhana.', 'warning'); $('#preview-foto-img').attr('src', data); $('#preview-foto-box').show(); }; img.onerror = () => Swal.fire('Foto gagal dibaca', 'Pilih gambar lain.', 'warning'); img.src = evt.target.result; }; reader.readAsDataURL(file); }
+
+        function saveUserCrud(e) {
+            e.preventDefault();
+            const id = $('#crud-user-id').val();
+            const data = { user_id: id || ('USR-' + crypto.randomUUID()), username: $('#crud-username').val().trim(), password: $('#crud-password').val(), nama: $('#crud-nama').val(), nip: $('#crud-nip').val(), jabatan: $('#crud-jabatan').val(), role: $('#crud-role').val(), status: 'Aktif', foto: $('#preview-foto-img').attr('src') || '' };
+            const finish = () => { bootstrap.Modal.getInstance(document.getElementById('modalUser')).hide(); Swal.fire('Tersimpan', IS_GAS ? 'Data tersimpan di penyimpanan GovMonitor.' : 'Data demo tersimpan untuk pratinjau.', 'success'); };
+            if (IS_GAS) return gasRun().withSuccessHandler(() => { fetchUsersFromGAS(); finish(); }).saveUserToGAS(data);
+            const idx = staffList.findIndex(u => u.user_id === id); if (idx >= 0) { data.password = data.password || staffList[idx].password; staffList[idx] = data; } else staffList.push(data); localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(staffList)); syncStaffData(); finish();
+        }
+        function deleteUser(id) {
+            Swal.fire({ title: 'Hapus Pegawai?', text: 'Akun pegawai akan dihapus. Arsip lembar kerja tetap dipertahankan.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Ya, Hapus' }).then(r => {
+                if (!r.isConfirmed) return;
+                const done = () => { staffList = staffList.filter(u => u.user_id !== id); if (!IS_GAS) localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(staffList)); syncStaffData(); Swal.fire('Terhapus', 'Akun pegawai berhasil dihapus.', 'success'); };
+                if (IS_GAS) gasRun().withSuccessHandler(done).deleteUserFromGAS(id); else done();
+            });
+        }
+
+        function handlePeriodChange(val) { const end = GovAzanCore.dateAt(Date.now(), 'Asia/Jakarta'); let start = end; if (val === 'WEEK') start = GovAzanCore.addDay(end, -6); else if (val === 'MONTH') start = end.slice(0, 7) + '-01'; else if (val === 'ALL') start = '2000-01-01'; if (val !== 'CUSTOM') { $('#report-date-start').val(start); $('#report-date-end').val(end); } if (currentUser?.role === 'Admin') generateReport(); }
+        function reportDateChanged() { $('#recap-period').val('CUSTOM'); generateReport(); }
+        window.reportDateChanged = reportDateChanged;
+        function filteredReportLogs() { const start = $('#report-date-start').val(), end = $('#report-date-end').val(), id = $('#recap-staff').val() || 'ALL'; return auditLogsData.filter(l => { const date = String(l.timestamp).slice(0, 10); return (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date >= start && date <= end) && (id === 'ALL' || l.user_id === id); }); }
+        async function loadReportLogs() { const start = $('#report-date-start').val(), end = $('#report-date-end').val(), id = $('#recap-staff').val() || 'ALL'; if (!start || !end || start > end) throw new Error('Tanggal mulai harus lebih awal atau sama dengan tanggal akhir.'); $('#report-period-text').text(start + ' s/d ' + end); if (IS_GAS) return await new Promise((resolve, reject) => gasRun().withSuccessHandler(res => resolve(res.logs)).withFailureHandler(reject).getReportDataFromGAS(start, end, id)); return filteredReportLogs(); }
+        async function generateReport() {
+            const request = ++reportRequest; let loaded; try { loaded = await loadReportLogs(); } catch (err) { $('#narrative-evaluation-text').text('Laporan belum tersedia: ' + err.message); return false; } if (request !== reportRequest) return false; reportLogs = loaded;
+            const selectedStaffId = $('#recap-staff').val() || "ALL";
+
+            let targetStaff = null;
+            if (selectedStaffId !== "ALL") {
+                targetStaff = (staffList || []).find(s => s.user_id === selectedStaffId || s.nama === selectedStaffId);
+            }
+
+            let filteredLogs = reportLogs;
+
+            // Metrik Kalkulasi ASN KPI
+            let totalInputs = filteredLogs.length;
+            let totalManual = filteredLogs.filter(l => l.method === 'Manual' || !l.method).length;
+            let totalSTT = filteredLogs.filter(l => l.method === 'Speech-to-Text').length;
+            let totalOCR = filteredLogs.filter(l => l.method === 'GovLens OCR').length;
+
+            let pctManual = totalInputs > 0 ? Math.round((totalManual / totalInputs) * 100) : 0;
+            let pctSTT = totalInputs > 0 ? Math.round((totalSTT / totalInputs) * 100) : 0;
+            let pctOCR = totalInputs > 0 ? Math.round((totalOCR / totalInputs) * 100) : 0;
+
+            let productivityIndex = totalInputs ? Math.round((totalSTT + totalOCR) / totalInputs * 100) : 0;
+            let statusText = 'Dikte + OCR'; let statusBadgeClass = 'bg-emerald-100 text-emerald-800';
+
+            // Bind values to KPI Cards
+            $('#kpi-total-cells').text(totalInputs);
+            $('#kpi-sub-total').text(totalInputs);
+            $('#kpi-manual-count').text(totalManual);
+            $('#kpi-manual-percent').text(pctManual + '%');
+            $('#kpi-stt-count').text(totalSTT);
+            $('#kpi-stt-percent').text(pctSTT + '%');
+            $('#kpi-productivity-index').text(productivityIndex + '%');
+
+            $('#kpi-productivity-status').text(statusText);
+            $('#kpi-productivity-badge').attr('class', `${statusBadgeClass} px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center space-x-1`);
+
+            // Progress Bars Ratio
+            $('#bar-manual-label').text(`${totalManual} (${pctManual}%)`);
+            $('#bar-manual-progress').css('width', `${pctManual}%`);
+
+            $('#bar-stt-label').text(`${totalSTT} (${pctSTT}%)`);
+            $('#bar-stt-progress').css('width', `${pctSTT}%`);
+
+            $('#bar-ocr-label').text(`${totalOCR} (${pctOCR}%)`);
+            $('#bar-ocr-progress').css('width', `${pctOCR}%`);
+
+            // Narrative Evaluation
+            $('#narrative-evaluation-text').html(
+                `Berdasarkan rekapitulasi data aktivitas GovMonitor Pemkab Banyuasin, total input dokumen yang telah tercatat berjumlah <strong class="text-slate-900">${totalInputs} entri sel</strong>. Penggunaan inovasi Dikte Suara (STT) mencapai <strong class="text-slate-900">${pctSTT}%</strong> yang membantu mempercepat pengisian lembar kerja pegawai secara signifikan. Laporan ini merangkum aktivitas penyuntingan yang tercatat dalam periode pilihan. Setiap penyuntingan dihitung sebagai satu aktivitas; persentase Dikte + OCR menunjukkan metode input, bukan penilaian kinerja resmi.`
+            );
+
+            // Render Table Body Staff Breakdown
+            let tbodyHtml = '';
+            let rowsStaffList = (selectedStaffId === "ALL") ? staffList.filter(s => s.role === 'Staf') : (targetStaff ? [targetStaff] : staffList.slice(0, 1));
+
+            if (rowsStaffList.length === 0) {
+                tbodyHtml = `<tr><td colspan="8" class="p-4 border border-slate-300 text-center text-slate-400 italic">Tidak ada data pegawai.</td></tr>`;
+            } else {
+                rowsStaffList.forEach((staf, idx) => {
+                    let sLogs = filteredLogs.filter(l => l.user_id === staf.user_id || l.nama_staf === staf.nama);
+                    let sTotal = sLogs.length;
+                    let sManual = sLogs.filter(l => l.method === 'Manual' || !l.method).length;
+                    let sSTT = sLogs.filter(l => l.method === 'Speech-to-Text').length;
+                    let sOCR = sLogs.filter(l => l.method === 'GovLens OCR').length;
+
+                    let sEfficiency = sTotal > 0 ? Math.min(100, Math.round(((sSTT + sOCR) / sTotal) * 100)) : 0;
+
+                    tbodyHtml += `
+                        <tr class="hover:bg-slate-50">
+                            <td class="p-2.5 border border-slate-300 text-center font-medium">${idx + 1}</td>
+                            <td class="p-2.5 border border-slate-300 font-bold text-slate-900">${escapeHtml(staf.nama)}</td>
+                            <td class="p-2.5 border border-slate-300 text-slate-600">${escapeHtml(staf.nip || '-')}<br><span class="text-[10px] text-slate-400">${escapeHtml(staf.jabatan || 'Operator')}</span></td>
+                            <td class="p-2.5 border border-slate-300 text-center font-bold">${sTotal}</td>
+                            <td class="p-2.5 border border-slate-300 text-center">${sManual}</td>
+                            <td class="p-2.5 border border-slate-300 text-center text-amber-600 font-semibold">${sSTT}</td>
+                            <td class="p-2.5 border border-slate-300 text-center text-sky-600 font-semibold">${sOCR}</td>
+                            <td class="p-2.5 border border-slate-300 text-center">
+                                <span class="bg-amber-400 text-slate-900 px-2.5 py-0.5 rounded-full text-[10px] font-black">${sEfficiency}% Dikte/OCR</span>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            $('#tbody-ekinerja-report').html(tbodyHtml);
+
+            // Render Table Sample Activities
+            let sampleHtml = '';
+            let sampleLogs = filteredLogs.slice(0, 5);
+            if (sampleLogs.length === 0) {
+                sampleHtml = `<tr><td colspan="5" class="p-4 border border-slate-300 text-center text-slate-400 italic">Belum ada sampel data.</td></tr>`;
+            } else {
+                sampleLogs.forEach(l => {
+                    sampleHtml += `
+                        <tr>
+                            <td class="p-2 border border-slate-300 text-center font-mono text-[11px]">${escapeHtml(l.timestamp)}</td>
+                            <td class="p-2 border border-slate-300 font-semibold text-slate-800">${escapeHtml(l.nama_staf)}</td>
+                            <td class="p-2 border border-slate-300 text-center font-bold text-emerald-700">${escapeHtml(l.cell)}</td>
+                            <td class="p-2 border border-slate-300 text-slate-700">${escapeHtml(l.new_val)}</td>
+                            <td class="p-2 border border-slate-300 text-center font-semibold ${l.method === 'Speech-to-Text' ? 'text-amber-600' : (l.method === 'GovLens OCR' ? 'text-sky-600' : 'text-slate-600')}">${escapeHtml(l.method || 'Manual')}</td>
+                        </tr>
+                    `;
+                });
+            }
+            $('#tbody-sample-activities').html(sampleHtml);
+
+            // Set Signatures
+            let selectedPegawaiNama = targetStaff ? targetStaff.nama : (selectedStaffId === 'ALL' ? 'ADMIN SYSTEM GOVMONITOR' : selectedStaffId);
+            let selectedPegawaiNip = targetStaff ? `NIP. ${escapeHtml(targetStaff.nip)}` : 'Diskoperindag Pemkab Banyuasin';
+
+            $('#sign-pegawai-nama').text(selectedPegawaiNama);
+            $('#sign-pegawai-nip').text(selectedPegawaiNip);
+            $('#sign-supervisor-nama').text(currentUser?.nama || 'Admin');
+            $('#sign-supervisor-nip').text(currentUser?.nip || '-');
+            $('#sign-current-date').text(new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' }));
+            await gmArchiveReportReady(request); if (request !== reportRequest) return false;
+            return true;
+        }
+
+        async function printOfficialReport() {
+            if (await generateReport()) window.print();
+        }
+
+        async function exportReportExcel() {
+            if (!await generateReport()) return;
+            if (typeof XLSX === 'undefined') {
+                Swal.fire('Fitur Unduh', 'Fitur unduh Excel aktif.', 'info');
+                return;
+            }
+
+            try {
+                let cleanRows = [
+                    ["LAPORAN REKAPITULASI CAPAIAN OUTPUT & INPUT KERJA PEGAWAI (e-KINERJA)"],
+                    ["PEMERINTAH KABUPATEN BANYUASIN - Dinas Koperasi Usaha Kecil dan Menengah, Perindustrian dan Perdagangan Kabupaten Banyuasin"],
+                    []
+                ];
+                cleanRows.push(["Periode", $('#report-date-start').val() + " s/d " + $('#report-date-end').val()]);
+                cleanRows.push(["No", "Waktu Input", "Nama Staf", "NIP", "Koordinat Sel", "Nilai Input", "Metode"]);
+
+                reportLogs.forEach((l, idx) => {
+                    cleanRows.push([idx + 1, l.timestamp, l.nama_staf, l.nip, l.cell, l.new_val, l.method || 'Manual']);
+                });
+
+                let ws = XLSX.utils.aoa_to_sheet(cleanRows);
+                let wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Rekap_eKinerja_Banyuasin");
+
+                let filename = `Laporan_eKinerja_ASN_Banyuasin_${new Date().toISOString().slice(0, 10)}.xlsx`;
+                XLSX.writeFile(wb, filename);
+            } catch (err) {
+                Swal.fire('Ekspor gagal', err.message || String(err), 'error');
+            }
+        }
+
+        function toggleLiveSimulation() {
+            if (IS_GAS) return Swal.fire('Simulasi hanya di pratinjau', 'Data produksi bersumber dari log kerja staf.', 'info');
+            isSimulating = !isSimulating;
+            const btn = $('#btn-toggle-sim');
+            if (isSimulating) {
+                btn.html('<i class="fas fa-pause me-1"></i> Hentikan Simulasi').removeClass('btn-warning').addClass('btn-danger');
+                liveSimInterval = setInterval(() => {
+                    const activeStaffs = staffList.filter(s => s.role === 'Staf');
+                    if (activeStaffs.length === 0) return;
+                    const randomStaff = activeStaffs[Math.floor(Math.random() * activeStaffs.length)];
+                    const cols = ['A', 'B', 'C', 'D', 'E'];
+                    const cell = cols[Math.floor(Math.random() * cols.length)] + (Math.floor(Math.random() * 10) + 1);
+                    const sampleTexts = ['Disetujui Diskominfo', 'Selesai Verifikasi', 'Output 100%', 'Pending LPJ', 'Proses Dikte Suara'];
+                    const randomVal = sampleTexts[Math.floor(Math.random() * sampleTexts.length)];
+
+                    let logItem = {
+                        log_id: "LOG-" + Math.floor(100000 + Math.random() * 900000),
+                        timestamp: new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Jakarta' }),
+                        user_id: randomStaff.user_id,
+                        nama_staf: randomStaff.nama,
+                        nip: randomStaff.nip,
+                        ip: "182.253.14.92",
+                        device: "Windows 11 / Chrome",
+                        cell: cell,
+                        prev_val: "-",
+                        new_val: randomVal,
+                        method: Math.random() > 0.5 ? 'Speech-to-Text' : 'Manual'
+                    };
+                    auditLogsData.unshift(logItem);
+                    refreshDashboardData();
+                    updateAuditLogsTable();
+                    renderLivePeekGrid();
+                }, 3000);
+            } else {
+                btn.html('<i class="fas fa-play me-1"></i> Mulai Simulasi').removeClass('btn-danger').addClass('btn-warning');
+                if (liveSimInterval) clearInterval(liveSimInterval);
+            }
+        }
+
+        function renderLivePeekGrid() {
+            let html = '';
+            staffList.filter(s => s.role === 'Staf').forEach(s => {
+                let lastLog = (auditLogsData || []).find(l => l.user_id === s.user_id) || { cell: "A1", new_val: "Belum ada input" };
+                html += `
+                    <div class="col-md-6 col-xl-4" id="live-card-${escapeHtml(s.user_id)}">
+                        <div class="glass-card p-3 h-100">
+                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                <div class="d-flex align-items-center gap-2">
+                                    <img src="${escapeHtml(s.foto || GM_LOGO)}" class="avatar-box" alt="Avatar">
+                                    <div>
+                                        <h6 class="fw-bold mb-0 text-dark extra-small">${escapeHtml(s.nama)}</h6>
+                                        <span class="badge ${s.work_status === 'Aktif' ? 'bg-success' : 'bg-secondary'} extra-small">${escapeHtml(s.work_status || (s.online ? 'Terhubung' : 'Belum terhubung'))}</span>
+                                        <div class="small text-muted mt-2">Log terakhir: ${escapeHtml(gmMonitoringVersion >= 2 ? gmMonitorTime(s.last_logout_at) : 'Menunggu pembaruan server')}</div>
+                                        <div class="small text-muted">${escapeHtml(gmLogoutReason(s.logout_reason))}${s.logout_save_status ? ' · ' + escapeHtml(s.logout_save_status) : ''}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="p-2 bg-dark rounded text-white extra-small mb-3 font-monospace">
+                                <div class="text-warning mb-1"><i class="fas fa-terminal me-1"></i>Aktivitas terakhir · ${escapeHtml(lastLog.timestamp || 'Belum ada input')}<br>Sel ${escapeHtml(lastLog.cell)}: "${escapeHtml(lastLog.new_val)}"</div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button onclick="gmOpenAdminWorksheet('${escapeHtml(s.user_id)}')" class="btn btn-warning btn-sm w-100 fw-bold">Monitor</button>
+                                <button onclick="window.openQuickChat('${escapeHtml(s.user_id)}')" class="btn btn-brand btn-sm w-100 fw-bold">Chat</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            $('#live-peek-grid').html(html);
+        }
+
+        function openLiveViewOnlyModal(userId) {
+            if (activePeekStaffId !== userId) { gmPeekTab = ''; gmPeekRow = 0; gmPeekCol = 0; gmPeekSheets = []; gmPeekRequest++; gmPeekBusy = false; document.getElementById('gm-peek-tabs').replaceChildren(); $('#peek-modal-grid-tbody').html('<tr><td class="p-4">Memuat lembar kerja staf…</td></tr>'); } activePeekStaffId = userId;
+            const staff = (staffList || []).find(s => s.user_id === userId);
+            if (!staff) return;
+
+            $('#peek-modal-staff-title').text(`Live Monitor: ${escapeHtml(staff.nama)}`);
+            $('#peek-modal-name').text(staff.nama);
+            $('#peek-modal-nip').text(`NIP. ${escapeHtml(staff.nip || '-')}`);
+            $('#peek-modal-avatar').attr('src', staff.foto || GM_LOGO);
+
+            const staffLogs = auditLogsData.filter(l => l.user_id === userId);
+            const lastLog = staffLogs[0] || { cell: "A1", new_val: "Belum ada input" };
+            $('#peek-modal-active-cell').text(lastLog.cell);
+
+            renderLiveViewOnlyGrid(userId);
+            renderSupervisorNotesList(userId);
+
+            const modal = new bootstrap.Modal(document.getElementById('modalLiveViewOnly'));
+            modal.show();
+        }
+
+        function renderSupervisorNotesList(userId) {
+            let notes = supervisorNotesStore[userId] || [];
+            if (IS_GAS) { gasRun().withSuccessHandler(res => { if (activePeekStaffId !== userId) return; $('#peek-supervisor-notes-list').html(res.notes.map(n => '<div class="p-2 bg-light rounded mb-1 extra-small"><strong>' + escapeHtml(n.time) + ' · ' + escapeHtml(n.admin) + ':</strong> ' + escapeHtml(n.text) + '</div>').join('') || '<div class="text-muted extra-small">Belum ada catatan.</div>'); }).getSupervisorNotes(userId); return; }
+            let html = notes.map(n => `<div class="p-2 bg-light rounded mb-1 extra-small"><strong>${escapeHtml(n.time)}:</strong> ${escapeHtml(n.text)}</div>`).join('');
+            $('#peek-supervisor-notes-list').html(html || '<div class="text-muted extra-small">Belum ada catatan.</div>');
+        }
+
+        function sendSupervisorNote() {
+            const noteText = $('#peek-supervisor-note-input').val().trim();
+            if (!noteText || !activePeekStaffId) return;
+            if (IS_GAS) { const id = activePeekStaffId; gasRun().withSuccessHandler(() => { $('#peek-supervisor-note-input').val(''); renderSupervisorNotesList(id); }).saveSupervisorNote(id, noteText); return; }
+
+            if (!supervisorNotesStore[activePeekStaffId]) supervisorNotesStore[activePeekStaffId] = [];
+            supervisorNotesStore[activePeekStaffId].unshift({ text: noteText, time: new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }) });
+            $('#peek-supervisor-note-input').val('');
+            renderSupervisorNotesList(activePeekStaffId);
+        }
+
+        function openGovLensModal() {
+            const modal = new bootstrap.Modal(document.getElementById('modalGovLensOCR'));
+            modal.show();
+            startGovLensCamera();
+        }
+
+        function startGovLensCamera() {
+            const video = document.getElementById('ocr-video-element');
+            if (!video) return;
+
+            stopGovLensCamera();
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: ocrFacingMode } }).then(stream => {
+                    ocrVideoStream = stream;
+                    video.srcObject = stream;
+                }).catch(() => { });
+            }
+        }
+
+        function stopGovLensCamera() {
+            if (ocrVideoStream) {
+                ocrVideoStream.getTracks().forEach(track => track.stop());
+                ocrVideoStream = null;
+            }
+        }
+
+        function switchGovLensCamera() {
+            ocrFacingMode = ocrFacingMode === 'environment' ? 'user' : 'environment';
+            startGovLensCamera();
+        }
+
+        function captureGovLensCamera() {
+            const video = document.getElementById('ocr-video-element');
+            const canvas = document.getElementById('ocr-canvas-hidden');
+            if (!video || !canvas) return;
+
+            const ctx = canvas.getContext('2d');
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            processGovLensImageOCR(canvas.toDataURL('image/jpeg', 0.85));
+        }
+
+        function handleGovLensFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (evt) {
+                processGovLensImageOCR(evt.target.result);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function processGovLensImageOCR(dataUrl) {
+            latestExtractedOCRText = '';
+            $('#ocr-preview-container').removeClass('d-none'); $('#ocr-status-spinner').removeClass('d-none'); $('#ocr-extracted-text').text('Membaca dokumen...');
+            const failed = err => { $('#ocr-status-spinner').addClass('d-none'); $('#ocr-extracted-text').text(err.message || String(err)); };
+            try {
+                const token = sessionToken;
+                if (token && typeof google !== 'undefined' && google.script && google.script.run) {
+                    try {
+                        const result = await gmRPCPromise('processGovLensOCR', [dataUrl], token);
+                        if (result && result.text) {
+                            latestExtractedOCRText = result.text.trim();
+                            $('#ocr-extracted-text').text(latestExtractedOCRText);
+                            $('#ocr-status-spinner').addClass('d-none');
+                            return;
+                        }
+                    } catch (gasErr) {
+                        console.warn('Backend OCR fallback to client-side:', gasErr.message);
+                    }
+                }
+                if (!window.Tesseract) await new Promise((resolve, reject) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'; s.onload = resolve; s.onerror = () => reject(new Error('Pustaka OCR belum dapat dimuat.')); document.head.append(s); });
+                const result = await Tesseract.recognize(dataUrl, 'ind+eng');
+                latestExtractedOCRText = result.data.text.trim();
+                $('#ocr-extracted-text').text(latestExtractedOCRText || 'Tidak ada teks terbaca. Coba foto yang lebih jelas.');
+                $('#ocr-status-spinner').addClass('d-none');
+            } catch (e) { failed(e); }
+        }
+
+        function applyOCRTextToLuckysheet() {
+            if (!latestExtractedOCRText) return;
+            insertTextToActiveCell(latestExtractedOCRText, "GovLens OCR");
+
+            bootstrap.Modal.getInstance(document.getElementById('modalGovLensOCR')).hide();
+            stopGovLensCamera();
+            Swal.fire('Berhasil!', 'Hasil OCR dimasukkan ke sel aktif.', 'success');
+        }
+
+        window.getStaffStorageKey = getStaffStorageKey;
+        window.updateLocalSyncBadge = updateLocalSyncBadge;
+        window.initLuckysheetEditor = initLuckysheetEditor;
+        window.initWebSpeechAPI = initWebSpeechAPI;
+        window.toggleSpeechRecognition = toggleSpeechRecognition;
+        window.openSpeechPopup = openSpeechPopup;
+        window.handleDikteResultFromPopup = handleDikteResultFromPopup;
+        window.stopSpeechRecognition = stopSpeechRecognition;
+        window.openStaffMyAuditModal = openStaffMyAuditModal;
+        window.applyAuditLogFilters = applyAuditLogFilters;
+        window.resetAuditFilters = resetAuditFilters;
+        window.exportAuditLogCSV = exportAuditLogCSV;
+        window.fetchAuditLogsFromGAS = fetchAuditLogsFromGAS;
+        window.fetchUsersFromGAS = fetchUsersFromGAS;
+        window.fetchChatLogsFromGAS = fetchChatLogsFromGAS;
+        window.openGovLensModal = openGovLensModal;
+        window.startGovLensCamera = startGovLensCamera;
+        window.stopGovLensCamera = stopGovLensCamera;
+        window.switchGovLensCamera = switchGovLensCamera;
+        window.captureGovLensCamera = captureGovLensCamera;
+        window.handleGovLensFileUpload = handleGovLensFileUpload;
+        window.applyOCRTextToLuckysheet = applyOCRTextToLuckysheet;
+        window.syncNowWithGAS = syncNowWithGAS;
+        window.exportToJson = exportToJson;
+        window.importFromJson = importFromJson;
+        window.exportToXlsx = exportToXlsx;
+        window.logout = logout;
+
+        /* ========================================================
+           LOGIKA TEMA & DARK MODE GOVMONITOR
+           ======================================================== */
+        window.gmCurrentTheme = localStorage.getItem('govmonitor_theme') || 'emerald';
+        window.gmCustomBgData = localStorage.getItem('govmonitor_custom_bg') || '';
+
+        function gmApplyTheme(themeName, customBg) {
+            window.gmCurrentTheme = themeName || 'emerald';
+            document.documentElement.setAttribute('data-gm-theme', window.gmCurrentTheme);
+            document.body.setAttribute('data-gm-theme', window.gmCurrentTheme);
+            try { localStorage.setItem('govmonitor_theme', window.gmCurrentTheme); } catch (e) {}
+
+            if (customBg) {
+                window.gmCustomBgData = customBg;
+                try { localStorage.setItem('govmonitor_custom_bg', customBg); } catch (e) {}
+            }
+
+            if (window.gmCurrentTheme === 'custom' && window.gmCustomBgData) {
+                document.documentElement.style.setProperty('--gm-custom-bg', 'url(' + window.gmCustomBgData + ')');
+                const prev = document.getElementById('gm-custom-preview-box');
+                if (prev) prev.style.backgroundImage = 'url(' + window.gmCustomBgData + ')';
+            }
+
+            // Perbarui ikon tombol di navbar
+            const icon = document.getElementById('nav-theme-btn-icon');
+            if (icon) {
+                if (window.gmCurrentTheme === 'dark') icon.className = 'fas fa-moon text-info fs-6';
+                else if (window.gmCurrentTheme === 'sapphire') icon.className = 'fas fa-gem text-primary fs-6';
+                else if (window.gmCurrentTheme === 'sunset') icon.className = 'fas fa-sun text-warning fs-6';
+                else if (window.gmCurrentTheme === 'office') icon.className = 'fas fa-building-flag text-success fs-6';
+                else if (window.gmCurrentTheme === 'custom') icon.className = 'fas fa-image text-secondary fs-6';
+                else icon.className = 'fas fa-palette text-dark fs-6';
+            }
+
+            // Perbarui kartu tema yang aktif di modal
+            document.querySelectorAll('.gm-theme-card').forEach(card => {
+                const isActive = card.getAttribute('data-theme') === window.gmCurrentTheme;
+                card.classList.toggle('active', isActive);
+            });
+
+            const status = document.getElementById('gm-theme-active-status');
+            if (status) {
+                const names = {
+                    emerald: 'Emerald Gov (Bawaan)',
+                    dark: 'Obsidian Dark Mode',
+                    sapphire: 'Royal Sapphire',
+                    sunset: 'Sunset Banyuasin',
+                    office: 'Kantor Parallax',
+                    custom: 'Foto Kustom Pribadi'
+                };
+                status.innerHTML = 'Tema aktif: <b>' + (names[window.gmCurrentTheme] || window.gmCurrentTheme) + '</b>';
+            }
+
+            const uploadSection = document.getElementById('gm-custom-upload-section');
+            if (uploadSection) {
+                uploadSection.classList.toggle('d-none', window.gmCurrentTheme !== 'custom');
+            }
+        }
+
+        window.openThemeModal = function () {
+            gmApplyTheme(window.gmCurrentTheme);
+            const modalEl = document.getElementById('modalThemePicker');
+            if (modalEl && typeof bootstrap !== 'undefined') {
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            }
+        };
+
+        window.selectTheme = function (themeName) {
+            gmApplyTheme(themeName);
+        };
+
+        window.handleCustomThemeUpload = function (event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+
+            if (file.size > 5 * 1024 * 1024) {
+                return Swal.fire('Ukuran File Terlalu Besar', 'Maksimal ukuran foto adalah 5 MB.', 'warning');
+            }
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const dataUrl = e.target.result;
+                gmApplyTheme('custom', dataUrl);
+                Swal.fire({
+                    title: 'Wallpaper Diterapkan!',
+                    text: 'Foto latar kustom Anda telah berhasil dipasang.',
+                    icon: 'success',
+                    timer: 1600,
+                    showConfirmButton: false
+                });
+            };
+            reader.readAsDataURL(file);
+        };
+
+        window.resetCustomTheme = function () {
+            try { localStorage.removeItem('govmonitor_custom_bg'); } catch (e) {}
+            window.gmCustomBgData = '';
+            document.documentElement.style.removeProperty('--gm-custom-bg');
+            const prev = document.getElementById('gm-custom-preview-box');
+            if (prev) prev.style.backgroundImage = '';
+            const input = document.getElementById('gm-custom-bg-input');
+            if (input) input.value = '';
+            gmApplyTheme('emerald');
+            Swal.fire('Foto Direset', 'Tema dikembalikan ke Emerald Gov.', 'info');
+        };
+
+        // Inisialisasi tema saat dokumen siap
+        document.addEventListener('DOMContentLoaded', function () {
+            gmApplyTheme(window.gmCurrentTheme, window.gmCustomBgData);
+        });
+
+        window.handleLogin = handleLogin;
+        window.togglePrayerCompact = togglePrayerCompact;
+        window.testAzanAudio = testAzanAudio;
+        window.toggleAzanMute = toggleAzanMute;
+        window.openAdminChatListModal = openAdminChatListModal;
+        window.openStaffChatWithAdmin = openStaffChatWithAdmin;
+        window.openQuickChat = openQuickChat;
+        window.switchChatStaff = switchChatStaff;
+        window.sendQuickChatMessage = sendQuickChatMessage;
+        window.switchAdminTab = switchAdminTab;
+        window.refreshDashboardData = refreshDashboardData;
+        window.refreshAdminData = () => { if (IS_GAS) refreshAdminMonitor(); else refreshDashboardData(); };
+        window.toggleLiveSimulation = toggleLiveSimulation;
+        window.filterActivityStream = filterActivityStream;
+        window.openModalAddUser = openModalAddUser;
+        window.editUser = editUser;
+        window.deleteUser = deleteUser;
+        window.saveUserCrud = saveUserCrud;
+        window.previewImageFile = previewImageFile;
+        window.generateReport = generateReport;
+        window.handlePeriodChange = handlePeriodChange;
+        window.printOfficialReport = printOfficialReport;
+        window.exportReportExcel = exportReportExcel;
+        window.openLiveViewOnlyModal = openLiveViewOnlyModal;
+        window.sendSupervisorNote = sendSupervisorNote;
+        window.setFallbackActiveCell = setFallbackActiveCell;
+        window.handleFallbackCellChange = handleFallbackCellChange;
+
+        if (document.modelContext?.registerTool) {
+            const lifecycle = new AbortController();
+            const register = tool => { try { Promise.resolve(document.modelContext.registerTool(tool, { signal: lifecycle.signal })).catch(() => { }); } catch (e) { } };
+            register({ name: 'read_govmonitor_status', title: 'Baca status GovMonitor', description: 'Membaca peran, jumlah aktivitas yang dimuat, dan status penyimpanan pada halaman ini.', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true }, execute(input) { if (input && Object.keys(input).length) throw new Error('Tidak menerima parameter.'); return { signed_in: !!currentUser, role: currentUser?.role || null, mode: IS_GAS ? 'GovMonitor' : 'Demo', loaded_logs: auditLogsData.length, sync_status: $('#status-sync-text').text() }; } });
+            register({ name: 'navigate_govmonitor_admin', title: 'Buka tab admin', description: 'Membuka tab admin yang ada pada antarmuka; memerlukan login Admin.', inputSchema: { type: 'object', properties: { tab: { type: 'string', enum: ['tab-overview', 'tab-live-peek', 'tab-activity-time', 'tab-audit-logs', 'tab-staff-mgmt', 'tab-reports'] } }, required: ['tab'], additionalProperties: false }, annotations: { readOnlyHint: false }, execute(input) { const tabs = ['tab-overview', 'tab-live-peek', 'tab-activity-time', 'tab-audit-logs', 'tab-staff-mgmt', 'tab-reports']; if (currentUser?.role !== 'Admin') throw new Error('Login Admin diperlukan.'); if (!input || Object.keys(input).some(k => k !== 'tab') || !tabs.includes(input.tab) || !document.getElementById(input.tab)) throw new Error('Tab tidak valid.'); switchAdminTab(input.tab); return { opened: input.tab }; } });
+            window.addEventListener('pagehide', () => lifecycle.abort(), { once: true });
+        }
+        // Live Monitor: read-only workbook tabs and session lifecycle.
+        let gmMonitoringVersion = 0, gmIdleTimer = null, gmEnding = false, gmHeartbeatBusy = false, gmLastBeat = 0, gmPeekBusy = false, gmPeekRequest = 0, gmPeekSheets = [], gmPeekTab = '', gmPeekRow = 0, gmPeekCol = 0, gmIdleSaveAt = 0;
+        function gmSessionKey() { return 'gm_activity_' + currentUser?.user_id + '_' + sessionToken.slice(-16); }
+        function gmRecordActivity() { if (currentUser?.role !== 'Staf' || gmEnding) return; gmSharedActivity(); if (Date.now() - lastUserInput >= 300000) { gmEndSession('idle'); return; } lastUserInput = Date.now(); try { localStorage.setItem(gmSessionKey(), String(lastUserInput)); } catch { } document.getElementById('gm-idle-warning')?.classList.add('d-none'); gmSendHeartbeat(); }
+        function gmSharedActivity() { try { const value = Number(localStorage.getItem(gmSessionKey())); if (value > lastUserInput && value <= Date.now()) lastUserInput = value; } catch { } }
+        function gmSendHeartbeat() {
+            if (!IS_GAS || currentUser?.role !== 'Staf' || gmEnding || gmHeartbeatBusy || Date.now() - gmLastBeat < 3000) return; gmHeartbeatBusy = true; gmLastBeat = Date.now(); const token = sessionToken; gmSharedActivity();
+            gasRun().withSuccessHandler(res => { gmHeartbeatBusy = false; if (sessionToken !== token) return; gmMonitoringVersion = res.monitoring_version || gmMonitoringVersion; if (res.broadcast) gmBroadcastAccept(res.broadcast, token); else gmBroadcastSync(); }).withFailureHandler(err => { gmHeartbeatBusy = false; if (sessionToken === token && /Sesi berakhir|Sesi belum tersedia/.test(err.message)) gmEndSession('expired'); }).heartbeatStaff({ broadcast: typeof gmBroadcast !== 'undefined' && Date.now() - gmBroadcast.last >= 15000, active: !document.hidden && Date.now() - lastUserInput < 120000, idle_ms: Math.max(0, Date.now() - lastUserInput), device: navigator.userAgent, cell: GovDikteCore.coordinate(getActiveCellPosition().r, getActiveCellPosition().c) });
+        }
+        function gmStartIdle(meta = {}) {
+            clearInterval(gmIdleTimer); gmEnding = false; gmHeartbeatBusy = false; gmLastBeat = 0; lastUserInput = Date.now() - Math.min(300000, Math.max(0, Number(meta.idle_ms) || 0)); gmMonitoringVersion = meta.monitoring_version || 0;
+            if (currentUser?.role !== 'Staf') return; try { const existing = Number(localStorage.getItem(gmSessionKey())); if (!existing) localStorage.setItem(gmSessionKey(), String(lastUserInput)); } catch { }
+            gmIdleTimer = setInterval(gmIdleTick, 1000); gmIdleTick();
+        }
+        function gmIdleTick() { if (currentUser?.role !== 'Staf' || gmEnding) return; gmSharedActivity(); const elapsed = Date.now() - lastUserInput; if (elapsed >= 300000) return gmEndSession('idle'); if (elapsed >= 270000) { document.getElementById('gm-idle-warning')?.classList.remove('d-none'); document.getElementById('gm-idle-countdown').textContent = Math.ceil((300000 - elapsed) / 1000); if (!snapshotBusy && Date.now() - gmIdleSaveAt > 10000 && localStorage.getItem(getStaffStorageKey() + '_dirty') === '1') { gmIdleSaveAt = Date.now(); saveRemoteSnapshot(); } } else document.getElementById('gm-idle-warning')?.classList.add('d-none'); }
+        function gmRPCPromise(method, args, token = sessionToken) { return new Promise((resolve, reject) => google.script.run.withSuccessHandler(res => { if (res?.success === false) reject(Error(res.error || res.message || 'Operasi gagal')); else resolve(res); }).withFailureHandler(reject)[method](...args, token)); }
+        async function gmFlushExit() {
+            if (currentUser?.role !== 'Staf') return true;
+            if (isLuckysheetLoaded || fallbackSheets.length) saveSheetToLocalStorage(); const key = getStaffStorageKey(); clearTimeout(autoSaveTimer); const started = Date.now(); while (snapshotBusy && Date.now() - started < 3500) await new Promise(resolve => setTimeout(resolve, 100));
+            if (snapshotBusy || !navigator.onLine) return localStorage.getItem(key + '_dirty') !== '1';
+            const sheets = JSON.parse(JSON.stringify(getWorkbook())); if (!sheets.length) return localStorage.getItem(key + '_dirty') !== '1';
+            const logs = pendingAudits().slice(0, 500); try { const res = await gmRPCPromise('syncFullSheetToGAS', [{ sheets_data: sheets, audit_logs: logs, expected_revision: gmStaffRevision }]); gmStaffSaved(res, sheets); const saved = new Set(res.saved_log_ids || []); localStorage.setItem(pendingAuditKey(), JSON.stringify(pendingAudits().filter(x => !saved.has(x.log_id)))); if (!pendingAudits().length && JSON.stringify(getWorkbook()) === JSON.stringify(sheets)) localStorage.removeItem(key + '_dirty'); return localStorage.getItem(key + '_dirty') !== '1'; } catch { return false; }
+        }
+        function gmExitView(message) {
+            clearInterval(gmIdleTimer); clearInterval(gmStaffPoll); clearInterval(gmAdminEditor.tick); gmAdminEditor.open = false; gmAdminEditor.request++; gmStaffPaused = false; gmStaffConflict = false; $('#gm-admin-workbench').addClass('d-none'); document.getElementById('view-staff-workspace').prepend(document.getElementById('gov-dikte-panel')); clearInterval(watchTimer); clearInterval(heartbeatTimer); clearInterval(monitorTimer); clearInterval(liveSimInterval); clearInterval(chatPollingTimer); clearTimeout(autoSaveTimer); snapshotAgain = false; isSimulating = false; reportRequest++; gmPeekRequest++;
+            try { luckysheet.destroy(); } catch { } isLuckysheetLoaded = false; fallbackSheets = []; $('#luckysheet-wrapper').html('<div id="luckysheet" style="width:100%;height:100%"></div>'); stopGovLensCamera(); stopSpeechRecognition(); gpStopAudio(); gp.activated = false; gp.pending = null; gp.last = null;
+            for (const storage of [localStorage, sessionStorage]) { try { storage.removeItem('govmonitor_session'); } catch { } } sessionToken = ''; currentUser = null; document.getElementById('gm-idle-warning')?.classList.add('d-none'); $('#page-app').addClass('d-none'); $('#page-login').removeClass('d-none'); document.getElementById('gm-exit-screen')?.classList.add('d-none'); gmEnding = false; $('#login-password').val(''); clearLoginBusy(); document.querySelectorAll('.modal.show').forEach(el => bootstrap.Modal.getInstance(el)?.hide()); Swal.fire('Sesi berakhir', message, 'info');
+        }
+        async function gmEndSession(reason = 'manual') {
+            if (!currentUser || gmEnding) return; if (currentUser.role === 'Admin' && gmAdminEditor.open && !await gmCloseAdminWorksheet()) return; gmEnding = true; const token = sessionToken, key = currentUser.role === 'Staf' ? getStaffStorageKey() : null; clearTimeout(autoSaveTimer); stopSpeechRecognition(); stopGovLensCamera(); document.getElementById('gm-exit-screen')?.classList.remove('d-none'); document.getElementById('gm-idle-warning')?.classList.add('d-none');
+            let saved = key ? localStorage.getItem(key + '_dirty') !== '1' : true, recorded = false; let recovery = null; if (key && (isLuckysheetLoaded || fallbackSheets.length)) { try { recovery = JSON.stringify(getWorkbook()); } catch { } }
+            if (reason === 'manual') saved = await gmFlushExit(); else if (key) { if (isLuckysheetLoaded || fallbackSheets.length) saveSheetToLocalStorage(); if (snapshotBusy) { const start = Date.now(); while (snapshotBusy && Date.now() - start < 3500) await new Promise(resolve => setTimeout(resolve, 100)); } saved = localStorage.getItem(key + '_dirty') !== '1'; }
+            if (IS_GAS && token) { try { await gmRPCPromise('endStaffSession', [{ reason: reason === 'idle' ? 'idle' : 'manual', save_status: saved ? 'saved' : 'pending' }], token); recorded = true; } catch { try { await gmRPCPromise('logoutSession', [], token); recorded = gmMonitoringVersion >= 2; } catch { } } }
+            try { localStorage.setItem('gm_exit_' + token.slice(-16), String(Date.now())); } catch { }
+            let backupOK = true; if (!saved && key && recovery) { try { localStorage.setItem(key, recovery); localStorage.setItem(key + '_dirty', '1'); backupOK = localStorage.getItem(key) === recovery; } catch { backupOK = false; } } if (!backupOK && recovery) { const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([recovery], { type: 'application/json' })); link.download = 'GovMonitor_Pemulihan_' + Date.now() + '.json'; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 10000); }
+            const message = (reason === 'idle' ? 'Anda keluar otomatis karena tidak aktif 5 menit.' : reason === 'expired' ? 'Sesi tidak lagi aktif. Silakan masuk kembali.' : 'Anda berhasil keluar.') + (saved ? '' : backupOK ? ' Perubahan belum tersinkron; salinan pemulihan disimpan di browser ini.' : ' Penyimpanan browser gagal. Simpan berkas pemulihan JSON yang diunduh.') + (!recorded && gmMonitoringVersion >= 2 ? ' Pencatatan server belum terkonfirmasi.' : ''); gmExitView(message);
+        }
+        function gmMonitorTime(value) { return value ? new Date(Number(value)).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB' : 'Belum ada riwayat keluar'; }
+        function gmLogoutReason(value) { return { idle: 'Tidak aktif 5 menit', manual: 'Keluar manual', expired: 'Batas sesi berakhir' }[value] || ''; }
+        function gmPeekStyle(v) { if (!v || typeof v !== 'object') return ''; let style = ''; for (const [key, prop] of [['bg', 'background-color'], ['fc', 'color']]) if (/^#[0-9a-f]{3,8}$/i.test(v[key] || '')) style += prop + ':' + v[key] + ';'; if (v.bl === 1) style += 'font-weight:bold;'; if (v.it === 1) style += 'font-style:italic;'; if (v.un === 1) style += 'text-decoration:underline;'; if (Number(v.fs) >= 8 && Number(v.fs) <= 40) style += 'font-size:' + Number(v.fs) + 'px;'; if ([0, 1, 2].includes(v.ht)) style += 'text-align:' + ['center', 'left', 'right'][v.ht] + ';'; return style; }
+        function gmRenderPeek() {
+            const sh = (gmPeekSheets || []).find(x => String(x.index ?? x.name) === gmPeekTab) || gmPeekSheets[0]; const tabs = document.getElementById('gm-peek-tabs'); tabs.replaceChildren(); gmPeekSheets.forEach(sheet => { const button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-sm ' + (sheet === sh ? 'btn-brand' : 'btn-outline-secondary'); button.textContent = sheet.name; button.setAttribute('aria-pressed', String(sheet === sh)); button.addEventListener('click', () => { gmPeekTab = String(sheet.index ?? sheet.name); gmPeekRow = 0; gmPeekCol = 0; gmRenderPeek(); }); tabs.append(button); }); if (!sh) { $('#peek-modal-grid-tbody').html('<tr><td class="p-4">Staf belum menyimpan lembar kerja.</td></tr>'); return; }
+            const cells = new Map(); let nr = 15, nc = 5; (sh.data || []).forEach((row, r) => (row || []).forEach((v, c) => { if (v !== null && v !== undefined && v !== '') { cells.set(r + ':' + c, v); nr = Math.max(nr, r + 1); nc = Math.max(nc, c + 1); } })); (sh.celldata || []).forEach(x => { cells.set(x.r + ':' + x.c, x.v); nr = Math.max(nr, x.r + 1); nc = Math.max(nc, x.c + 1); }); nr = Math.min(10000, nr); nc = Math.min(200, nc); gmPeekRow = Math.min(gmPeekRow, Math.floor((nr - 1) / 100) * 100); gmPeekCol = Math.min(gmPeekCol, Math.floor((nc - 1) / 30) * 30); const re = Math.min(nr, gmPeekRow + 100), ce = Math.min(nc, gmPeekCol + 30), merges = Object.values(sh.config?.merge || {}); let html = '<tr><th>#</th>'; for (let c = gmPeekCol; c < ce; c++)html += '<th>' + columnName(c) + '</th>'; html += '</tr>';
+            for (let r = gmPeekRow; r < re; r++) { html += '<tr><th>' + (r + 1) + '</th>'; for (let c = gmPeekCol; c < ce; c++) { const merge = (merges || []).find(m => r >= m.r && r < m.r + m.rs && c >= m.c && c < m.c + m.cs); if (merge && (r !== Math.max(merge.r, gmPeekRow) || c !== Math.max(merge.c, gmPeekCol))) continue; const v = cells.get((merge ? merge.r : r) + ':' + (merge ? merge.c : c)), value = typeof v === 'object' ? (v?.m ?? v?.v ?? v?.f ?? '') : v ?? ''; const span = merge ? ' rowspan="' + (Math.min(merge.r + merge.rs, re) - Math.max(merge.r, gmPeekRow)) + '" colspan="' + (Math.min(merge.c + merge.cs, ce) - Math.max(merge.c, gmPeekCol)) + '"' : ''; const width = Math.max(60, Math.min(600, Number(sh.config?.columnlen?.[c]) || 95)); html += '<td' + span + ' style="min-width:' + width + 'px;' + gmPeekStyle(v) + '">' + escapeHtml(value) + '</td>'; } html += '</tr>'; }
+            $('#peek-modal-grid-table thead').hide(); $('#peek-modal-grid-tbody').html(html); document.getElementById('gm-peek-page').textContent = 'Baris ' + (gmPeekRow + 1) + '–' + re + ' / ' + nr + ' · Kolom ' + columnName(gmPeekCol) + '–' + columnName(ce - 1); document.getElementById('gm-peek-source').textContent = sh.google_sheet_name ? 'Google Sheets: ' + sh.google_sheet_name : 'Salinan tersimpan: ' + sh.name;
+            for (const [id, disabled] of [['gm-peek-prev', gmPeekRow === 0], ['gm-peek-next', re >= nr], ['gm-peek-left', gmPeekCol === 0], ['gm-peek-right', ce >= nc]]) document.getElementById(id).disabled = disabled;
+        }
+        function renderLiveViewOnlyGrid(userId) { if (gmPeekBusy || !userId) return; gmPeekBusy = true; const ticket = ++gmPeekRequest; gasRun().withSuccessHandler(res => { if (ticket !== gmPeekRequest || activePeekStaffId !== userId) return; gmPeekBusy = false; gmPeekSheets = res.sheets || []; const wrap = document.getElementById('gm-peek-scroll'), top = wrap.scrollTop, left = wrap.scrollLeft; gmRenderPeek(); wrap.scrollTop = top; wrap.scrollLeft = left; document.getElementById('gm-peek-updated').textContent = 'Data tersimpan terakhir: ' + (res.updated_at || 'Belum tersedia') + ' · diperiksa ' + new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }); }).withFailureHandler(err => { if (ticket === gmPeekRequest) { gmPeekBusy = false; document.getElementById('gm-peek-updated').textContent = 'Pembaruan belum berhasil: ' + err.message; } }).getAdminStaffWorksheet(userId); }
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('gm-idle-continue')?.addEventListener('click', gmRecordActivity);['keydown', 'pointerdown', 'input', 'wheel', 'touchmove'].forEach(name => document.addEventListener(name, e => { if (e.isTrusted && e.target?.closest?.('#view-staff-workspace,.gd-panel,.stt-fab,#modalGovLens,#gm-idle-warning,#broadcast-running-bar,#attendance-running-bar,#gm-attendance-receipt,#modalAttendanceHistory')) gmRecordActivity(); }, { passive: true })); document.addEventListener('visibilitychange', () => { if (!document.hidden) gmIdleTick(); }); window.addEventListener('storage', e => { if (sessionToken && e.key === 'gm_exit_' + sessionToken.slice(-16) && currentUser) gmExitView('Sesi ini telah diakhiri di tab lain.'); });
+            document.getElementById('modalLiveViewOnly')?.addEventListener('hidden.bs.modal', () => { gmPeekRequest++; gmPeekBusy = false; }); for (const [id, change] of [['gm-peek-prev', () => gmPeekRow = Math.max(0, gmPeekRow - 100)], ['gm-peek-next', () => gmPeekRow += 100], ['gm-peek-left', () => gmPeekCol = Math.max(0, gmPeekCol - 30)], ['gm-peek-right', () => gmPeekCol += 30]]) document.getElementById(id)?.addEventListener('click', () => { change(); gmRenderPeek(); });
+        });
+
+        let gmStaffRevision = '', gmStaffBase = [], gmStaffPaused = false, gmStaffLock = null, gmStaffAcknowledged = false, gmStaffPoll = null, gmStaffPollBusy = false, gmStaffConflict = false, gmStaffEditVersion = 0;
+        const gmAdminEditor = { open: false, staff: null, lock: null, revision: '', editing: false, dirty: false, busy: false, sheets: [], fingerprint: '', tick: null, polling: false, request: 0, version: 0, leaseChecked: 0 };
+        function gmCanWriteWorkbook() { return currentUser?.role === 'Staf' ? !gmStaffPaused && !gmStaffConflict : currentUser?.role === 'Admin' && gmAdminEditor.open && gmAdminEditor.editing && gmAdminEditor.lock?.state === 'active' && Date.now() - gmAdminEditor.leaseChecked < 65000 && !gmAdminEditor.busy; }
+        function gmWorkbookCells(sheet) { const cells = new Map(); if (sheet.data?.length) sheet.data.forEach((row, r) => (row || []).forEach((v, c) => { if (v !== null && v !== undefined && v !== '') cells.set(r + ':' + c, v); })); else (sheet.celldata || []).forEach(x => cells.set(x.r + ':' + x.c, x.v)); return cells; }
+        function gmEditFingerprint(sheets) { return JSON.stringify(sheets.map(sh => ({ name: sh.name, config: sh.config || {}, cells: [...gmWorkbookCells(sh)].map(([k, v]) => [k, typeof v === 'object' ? { ...v, m: undefined } : v]) }))); }
+        function gmStaffRemember() { if (currentUser?.role !== 'Staf' || !gmStaffRevision || gmStaffConflict) return; try { localStorage.setItem(getStaffStorageKey() + '_revision', gmStaffRevision); localStorage.setItem(getStaffStorageKey() + '_base', JSON.stringify(gmStaffBase)); } catch { } }
+        function gmStaffSaved(res, sheets) { if (res.revision) { gmStaffRevision = res.revision; gmStaffBase = JSON.parse(JSON.stringify(sheets)); gmStaffRemember(); } }
+        function gmStaffLoadMeta(res) { gmStaffEditVersion = res.editing_version || 0; gmStaffRevision = res.revision || ''; gmStaffBase = JSON.parse(JSON.stringify(res.sheets || [])); gmStaffPaused = false; gmStaffConflict = false; gmStaffLock = null; gmStaffAcknowledged = false; clearInterval(gmStaffPoll); if (gmStaffEditVersion) gmStaffPoll = setInterval(gmPollStaffLock, 10000); }
+        function gmBaseCell(v) { if (v && typeof v === 'object') { const out = { ...v }; delete out.m; return JSON.stringify(out); } return JSON.stringify(v ?? null); }
+        function gmMergeDraft(base, local, remote) {
+            if (!Array.isArray(base) || !base.length || JSON.stringify(base.map(s => s.name)) !== JSON.stringify(remote.map(s => s.name)) || JSON.stringify(base.map(s => s.name)) !== JSON.stringify(local.map(s => s.name)) || JSON.stringify(base.map(s => s.config || {})) !== JSON.stringify(local.map(s => s.config || {}))) return { unsupported: true };
+            const merged = JSON.parse(JSON.stringify(remote)), conflicts = []; local.forEach(sh => { const old = (base || []).find(s => s.name === sh.name), target = (merged || []).find(s => s.name === sh.name); if (!old || !target) return; const a = gmWorkbookCells(old), b = gmWorkbookCells(sh), c = gmWorkbookCells(target); for (const key of new Set([...a.keys(), ...b.keys()])) { if (gmBaseCell(a.get(key)) === gmBaseCell(b.get(key))) continue; const [r, col] = key.split(':').map(Number), put = v => { target.data ??= []; target.data[r] ??= []; target.data[r][col] = v ?? null; target.celldata = (target.celldata || []).filter(x => x.r !== r || x.c !== col); }; if (gmBaseCell(c.get(key)) !== gmBaseCell(a.get(key)) && gmBaseCell(c.get(key)) !== gmBaseCell(b.get(key))) conflicts.push({ sheet: sh.name, cell: columnName(col) + (r + 1), server: c.get(key), local: b.get(key), apply: () => put(b.get(key)) }); else put(b.get(key)); } }); return { merged, conflicts };
+        }
+        async function gmRecoverStaffDraft(res, local) {
+            const key = getStaffStorageKey(), revision = localStorage.getItem(key + '_revision'); if (!res.editing_version || revision === res.revision) { gmStaffRemember(); return local; } let base; try { base = JSON.parse(localStorage.getItem(key + '_base') || 'null'); } catch { } const result = gmMergeDraft(base, local, res.sheets || []); if (result.unsupported) { gmStaffConflict = true; await Swal.fire('Perlu pemeriksaan konflik', 'Versi server sudah berubah. Unduh backup lokal melalui Ekspor JSON, lalu muat data server. Salinan lokal tidak akan dikirim otomatis.', 'warning'); return local; }
+            if (result.conflicts.length) {
+                const html = '<p>Sel berikut diubah oleh Anda dan di server. Pilih perubahan lokal yang ingin dipakai; pilihan awal memakai server.</p><div style="max-height:320px;overflow:auto;text-align:left">' + result.conflicts.map((c, i) => '<label class="d-block border rounded p-2 mb-2"><input type="checkbox" id="gm-conflict-' + i + '"> ' + escapeHtml(c.sheet + ' · ' + c.cell) + '<br>Server: ' + escapeHtml(c.server?.m ?? c.server?.v ?? c.server ?? '') + '<br>Lokal: ' + escapeHtml(c.local?.m ?? c.local?.v ?? c.local ?? '') + '</label>').join('') + '</div>';
+                const answer = await Swal.fire({ title: 'Periksa konflik perubahan', html, showCancelButton: true, confirmButtonText: 'Gabungkan pilihan', cancelButtonText: 'Tetap simpan lokal', preConfirm: () => result.conflicts.map((_, i) => document.getElementById('gm-conflict-' + i).checked) }); if (!answer.isConfirmed) { gmStaffConflict = true; return local; } result.conflicts.forEach((c, i) => { if (answer.value[i]) c.apply(); });
+            }
+            gmStaffRevision = res.revision; gmStaffBase = JSON.parse(JSON.stringify(res.sheets || [])); gmStaffRemember(); return result.merged;
+        }
+        function gmStaffOverlay() { const e = document.getElementById('gm-staff-edit-overlay'); e.classList.toggle('d-none', !gmStaffPaused && !gmStaffConflict); document.getElementById('gm-staff-edit-message').textContent = gmStaffConflict ? 'Versi server berubah. Periksa konflik atau unduh salinan lokal sebelum memuat data terbaru.' : gmStaffLock?.state === 'pending' && !gmStaffAcknowledged ? 'Admin ' + gmStaffLock.admin_name + ' meminta kendali. Simpan perubahan lalu serahkan, atau tolak permintaan.' : 'Lembar kerja sedang diperbarui oleh Admin ' + (gmStaffLock?.admin_name || '') + '.'; document.getElementById('gm-staff-handover')?.classList.toggle('d-none', !gmStaffLock || gmStaffLock.state !== 'pending' || gmStaffAcknowledged); document.getElementById('gm-staff-reject')?.classList.toggle('d-none', !gmStaffLock || gmStaffLock.state !== 'pending' || gmStaffAcknowledged); document.getElementById('gm-staff-reload')?.classList.toggle('d-none', !!gmStaffLock); }
+        async function gmPollStaffLock() { if (currentUser?.role !== 'Staf' || !gmStaffEditVersion || gmStaffPollBusy || gmEnding) return; gmStaffPollBusy = true; const token = sessionToken; try { const res = await gmRPCPromise('getStaffEditStatus', [], token); if (sessionToken !== token) return; const wasPaused = gmStaffPaused; gmStaffLock = res.lock; gmStaffAcknowledged = res.acknowledged; gmStaffPaused = !!res.lock; if (gmStaffPaused) { clearTimeout(autoSaveTimer); stopSpeechRecognition(); stopGovLensCamera(); } if (!res.lock && wasPaused) await gmReloadStaffWorkbook(); else gmStaffOverlay(); } catch (e) { if (/Sesi berakhir/.test(e.message)) gmEndSession('expired'); } finally { gmStaffPollBusy = false; } }
+        async function gmReloadStaffWorkbook() { if (currentUser?.role !== 'Staf') return; const token = sessionToken; try { const res = await gmRPCPromise('getStaffWorksheetsFromGAS', [], token); if (sessionToken !== token) return; const key = getStaffStorageKey(), local = localStorage.getItem(key); gmStaffLoadMeta(res); let sheets = res.sheets?.length ? res.sheets : [{ name: 'lembar_kerja 1', data: [], config: {} }]; if (local && localStorage.getItem(key + '_dirty') === '1') sheets = await gmRecoverStaffDraft(res, JSON.parse(local)); else gmStaffRemember(); initLuckysheetEditor(sheets); gmStaffOverlay(); if (!gmStaffConflict && localStorage.getItem(key + '_dirty') === '1') queueSnapshot(); } catch (e) { gmStaffPaused = true; gmStaffOverlay(); Swal.fire('Belum dapat memuat ulang', e.message, 'error'); } }
+        async function gmStaffHandover(decision) { if (!gmStaffLock) return; const lock = gmStaffLock; if (decision === 'accept') { if (!await gmFlushExit()) { Swal.fire('Belum tersimpan', 'Kendali belum diserahkan. Sinkronkan atau periksa konflik terlebih dahulu.', 'warning'); return; } } try { await gmRPCPromise('respondStaffWorksheetEdit', [{ request_id: lock.request_id, decision }]); gmStaffAcknowledged = decision === 'accept'; await gmPollStaffLock(); } catch (e) { Swal.fire('Penyerahan belum berhasil', e.message, 'error'); } }
+        function gmAdminStatus(message) { document.getElementById('gm-admin-editor-status').textContent = message; }
+        function gmAdminButtons() { const can = gmCanWriteWorkbook(); document.getElementById('gm-admin-enable').disabled = gmAdminEditor.busy || !!gmAdminEditor.lock || !gmAdminEditor.version || (gmAdminEditor.dirty && !gmAdminEditor.editing); document.getElementById('gm-admin-save').disabled = !can || !gmAdminEditor.dirty; document.getElementById('gm-admin-finish').disabled = gmAdminEditor.busy || !gmAdminEditor.lock; document.getElementById('gm-admin-dikte').disabled = !can; document.getElementById('gm-admin-ocr').disabled = !can; document.getElementById('gm-admin-mode').textContent = gmAdminEditor.editing ? 'Edit admin' : gmAdminEditor.lock ? 'Menunggu kendali' : 'Hanya baca'; }
+        function gmAdminCreate(sheets, editing) {
+            stopSpeechRecognition(); try { luckysheet.destroy(); } catch { } isLuckysheetLoaded = false; document.getElementById('gm-admin-sheet').replaceChildren(); gmAdminEditor.sheets = JSON.parse(JSON.stringify(sheets?.length ? sheets : [{ name: 'lembar_kerja 1', data: [], config: {}, status: 1, order: 0 }])); gmAdminEditor.editing = editing;
+            try { luckysheet.create({ container: 'gm-admin-sheet', lang: 'en', title: '', showinfobar: false, showtoolbar: editing, showsheetbar: true, showsheetbarConfig: { add: editing, menu: editing, sheet: true }, showstatisticBar: true, allowEdit: editing, enableAddRow: editing, data: gmAdminEditor.sheets, hook: { cellUpdateBefore: () => gmCanWriteWorkbook(), cellUpdated: () => { if (gmAdminEditor.editing && !suppressCellHook) { gmAdminEditor.dirty = true; gmAdminButtons(); } } } }); isLuckysheetLoaded = true; gmAdminEditor.fingerprint = gmEditFingerprint(luckysheet.getAllSheets()); setTimeout(() => { if (gmAdminEditor.open) luckysheet.resize(); }, 100); } catch { gmAdminStatus('Editor spreadsheet belum tersedia. Muat ulang halaman untuk memuat pustakanya.'); } gmAdminButtons();
+        }
+        async function gmOpenAdminWorksheet(userId) {
+            if (currentUser?.role !== 'Admin') return; if (gmAdminEditor.open && !await gmCloseAdminWorksheet()) return; const staff = (staffList || []).find(s => s.user_id === userId); if (!staff) return; gmAdminEditor.open = true; gmAdminEditor.staff = staff; gmAdminEditor.lock = null; gmAdminEditor.dirty = false; gmAdminEditor.polling = false; gmAdminEditor.version = 0; gmAdminEditor.editing = false; const ticket = ++gmAdminEditor.request; $('#view-admin-dashboard').addClass('d-none'); $('#gm-admin-workbench').removeClass('d-none'); document.getElementById('gm-admin-editor-title').textContent = 'Lembar Kerja · ' + staff.nama; document.getElementById('gov-dikte-panel').parentElement !== document.body && document.body.append(document.getElementById('gov-dikte-panel')); gmAdminStatus('Memuat lembar kerja staf…'); gmAdminButtons();
+            try { const res = await gmRPCPromise('getAdminStaffWorksheet', [userId]); if (ticket !== gmAdminEditor.request) return; gmAdminEditor.revision = res.revision || ''; gmAdminEditor.version = res.editing_version || 0; gmAdminCreate(res.sheets, false); gmAdminStatus(gmAdminEditor.version ? 'Data tersimpan terakhir: ' + (res.updated_at || 'Belum tersedia') : 'Mode lihat tersedia. Aktifkan pembaruan Code.gs untuk mengedit dengan penguncian.'); } catch (e) { gmAdminStatus(e.message); }
+            clearInterval(gmAdminEditor.tick); gmAdminEditor.tick = setInterval(gmAdminTick, 15000);
+        }
+        async function gmAdminEnable() { if (!gmAdminEditor.open || gmAdminEditor.busy || !gmAdminEditor.version) return; gmAdminEditor.busy = true; gmAdminButtons(); try { const res = await gmRPCPromise('requestAdminWorksheetEdit', [gmAdminEditor.staff.user_id]); gmAdminEditor.lock = res.lock; gmAdminStatus(res.lock.state === 'pending' ? 'Menunggu staf menyimpan dan menyerahkan kendali…' : 'Memuat versi terbaru untuk diedit…'); } catch (e) { Swal.fire('Kendali belum tersedia', e.message, 'warning'); } finally { gmAdminEditor.busy = false; } await gmAdminTick(); gmAdminButtons(); }
+        async function gmAdminTick() {
+            if (!gmAdminEditor.open || gmAdminEditor.busy || gmAdminEditor.polling || (gmAdminEditor.dirty && !gmAdminEditor.lock) || currentUser?.role !== 'Admin') return; gmAdminEditor.polling = true; const ticket = gmAdminEditor.request; try {
+                if (gmAdminEditor.lock) { const res = await gmRPCPromise('getAdminWorksheetEdit', [{ staff_id: gmAdminEditor.staff.user_id, request_id: gmAdminEditor.lock.request_id, include_workbook: !gmAdminEditor.editing }]); if (ticket !== gmAdminEditor.request) return; gmAdminEditor.lock = res.lock; gmAdminEditor.leaseChecked = Date.now(); if (res.lock.state === 'active' && !gmAdminEditor.editing && !gmAdminEditor.dirty) { gmAdminEditor.revision = res.workbook.revision; gmAdminCreate(res.workbook.sheets, true); gmAdminStatus('Kendali aktif. Perubahan Anda dicatat sebagai edit admin.'); } else if (res.lock.state === 'pending') gmAdminStatus('Menunggu ' + res.lock.waiting_count + ' sesi staf menyerahkan kendali…'); }
+                else { const res = await gmRPCPromise('getAdminStaffWorksheet', [gmAdminEditor.staff.user_id]); if (ticket !== gmAdminEditor.request) return; if (res.revision !== gmAdminEditor.revision) { gmAdminEditor.revision = res.revision || ''; gmAdminCreate(res.sheets, false); } gmAdminEditor.version = res.editing_version || 0; }
+            }
+            catch (e) { if (ticket === gmAdminEditor.request && gmAdminEditor.lock) { gmAdminEditor.editing = false; gmAdminEditor.lock = null; stopSpeechRecognition(); gmAdminStatus('Kendali berakhir. Unduh salinan perubahan sebelum memuat versi terbaru. ' + e.message); } }
+            finally { if (ticket === gmAdminEditor.request) { gmAdminEditor.polling = false; gmAdminButtons(); } }
+        }
+        async function gmAdminSave() { if (!gmCanWriteWorkbook() || !isLuckysheetLoaded) return false; const token = sessionToken, staffId = gmAdminEditor.staff.user_id, ticket = gmAdminEditor.request, data = JSON.parse(JSON.stringify(luckysheet.getAllSheets())); gmAdminEditor.busy = true; gmAdminButtons(); gmAdminStatus('Menyimpan perubahan admin…'); try { const res = await gmRPCPromise('saveAdminStaffWorksheet', [{ staff_id: staffId, request_id: gmAdminEditor.lock.request_id, expected_revision: gmAdminEditor.revision, sheets_data: data }], token); if (ticket !== gmAdminEditor.request) return false; gmAdminEditor.revision = res.revision; gmAdminEditor.dirty = false; gmAdminEditor.fingerprint = gmEditFingerprint(data); gmAdminEditor.leaseChecked = Date.now(); gmAdminStatus('Tersimpan · ' + res.updated_at + ' · ' + res.changes + ' perubahan dicatat.'); return true; } catch (e) { gmAdminStatus('Belum tersimpan: ' + e.message); return false; } finally { if (ticket === gmAdminEditor.request) { gmAdminEditor.busy = false; gmAdminButtons(); } } }
+        async function gmAdminFinish() { if (!gmAdminEditor.lock || gmAdminEditor.busy) return false; if (gmAdminEditor.dirty && !await gmAdminSave()) return false; gmAdminEditor.busy = true; gmAdminButtons(); try { await gmRPCPromise('finishAdminWorksheetEdit', [{ staff_id: gmAdminEditor.staff.user_id, request_id: gmAdminEditor.lock.request_id }]); gmAdminEditor.lock = null; gmAdminEditor.editing = false; const res = await gmRPCPromise('getAdminStaffWorksheet', [gmAdminEditor.staff.user_id]); gmAdminEditor.revision = res.revision; gmAdminCreate(res.sheets, false); gmAdminStatus('Kendali dikembalikan. Staf dapat memuat versi terbaru dan melanjutkan pekerjaan.'); return true; } catch (e) { gmAdminStatus(e.message); return false; } finally { gmAdminEditor.busy = false; gmAdminButtons(); } }
+        async function gmCloseAdminWorksheet() { if (gmAdminEditor.lock) { const answer = await Swal.fire({ title: 'Selesai mengedit?', text: gmAdminEditor.dirty ? 'Simpan perubahan sebelum mengembalikan kendali.' : 'Kembalikan kendali lembar kerja kepada staf.', showCancelButton: true, confirmButtonText: 'Simpan & selesai', cancelButtonText: 'Tetap di editor' }); if (!answer.isConfirmed || !await gmAdminFinish()) return false; } else if (gmAdminEditor.dirty) { await Swal.fire('Perubahan belum tersimpan', 'Unduh salinan JSON sebelum meninggalkan editor yang kehilangan kendali.', 'warning'); return false; } gmAdminEditor.open = false; gmAdminEditor.request++; clearInterval(gmAdminEditor.tick); stopSpeechRecognition(); try { luckysheet.destroy(); } catch { } isLuckysheetLoaded = false; $('#gm-admin-workbench').addClass('d-none'); $('#view-admin-dashboard').removeClass('d-none'); document.getElementById('view-staff-workspace').prepend(document.getElementById('gov-dikte-panel')); switchAdminTab('tab-live-peek'); return true; }
+        function gmAdminExport() { const data = isLuckysheetLoaded ? luckysheet.getAllSheets() : gmAdminEditor.sheets, link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' })); link.download = 'GovMonitor_Admin_' + gmAdminEditor.staff.user_id + '.json'; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 10000); }
+        function gmEditorCellAudit() { if (currentUser?.role === 'Admin' && gmAdminEditor.open) { gmAdminEditor.dirty = true; gmAdminButtons(); return true; } return false; }
+        document.addEventListener('DOMContentLoaded', () => { document.getElementById('gm-admin-reload')?.addEventListener('click', gmAdminReload); document.getElementById('gm-staff-discard')?.addEventListener('click', gmStaffDiscard); document.getElementById('gm-admin-back')?.addEventListener('click', gmCloseAdminWorksheet); document.getElementById('gm-admin-enable')?.addEventListener('click', gmAdminEnable); document.getElementById('gm-admin-save')?.addEventListener('click', gmAdminSave); document.getElementById('gm-admin-finish')?.addEventListener('click', gmAdminFinish); document.getElementById('gm-admin-export')?.addEventListener('click', gmAdminExport); document.getElementById('gm-admin-dikte')?.addEventListener('click', openDiktePanel); document.getElementById('gm-admin-ocr')?.addEventListener('click', openGovLensModal); document.getElementById('gm-staff-handover')?.addEventListener('click', () => gmStaffHandover('accept')); document.getElementById('gm-staff-reject')?.addEventListener('click', () => gmStaffHandover('reject')); document.getElementById('gm-staff-reload')?.addEventListener('click', gmReloadStaffWorkbook); setInterval(() => { if (gmAdminEditor.open && gmAdminEditor.editing && isLuckysheetLoaded) { if (gmEditFingerprint(luckysheet.getAllSheets()) !== gmAdminEditor.fingerprint) { gmAdminEditor.dirty = true; gmAdminButtons(); } if (Date.now() - gmAdminEditor.leaseChecked >= 65000) { gmAdminEditor.editing = false; stopSpeechRecognition(); gmAdminStatus('Koneksi kendali belum diperbarui. Simpan salinan JSON sebelum memuat ulang.'); gmAdminButtons(); } } }, 2000); window.addEventListener('beforeunload', e => { if (gmAdminEditor.open && gmAdminEditor.dirty) { e.preventDefault(); e.returnValue = ''; } }); });
+
+        async function gmAdminReload() { if (gmAdminEditor.lock) return Swal.fire('Kendali masih aktif', 'Selesaikan penyuntingan sebelum memuat ulang.', 'warning'); if (gmAdminEditor.dirty) { const answer = await Swal.fire({ title: 'Unduh perubahan lalu muat server?', text: 'Salinan JSON diunduh sebelum editor mengganti perubahan yang belum tersimpan.', showCancelButton: true, confirmButtonText: 'Unduh & muat server' }); if (!answer.isConfirmed) return; gmAdminExport(); gmAdminEditor.dirty = false; } const id = gmAdminEditor.staff.user_id; await gmOpenAdminWorksheet(id); }
+        async function gmStaffDiscard() { const answer = await Swal.fire({ title: 'Unduh salinan lokal lalu muat server?', text: 'Salinan lokal diunduh sebagai JSON. Editor kemudian menggunakan versi server terbaru.', showCancelButton: true, confirmButtonText: 'Unduh & muat server' }); if (!answer.isConfirmed) return; exportToJson(); localStorage.removeItem(getStaffStorageKey() + '_dirty'); localStorage.removeItem(pendingAuditKey()); gmStaffConflict = false; await gmReloadStaffWorkbook(); }
+
+        let gmActivity = { data: null, received: 0, request: 0, busy: false, last: 0, limit: 40, key: '', owner: '' };
+        function gmActivityDate() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
+        function gmActivityVisible() { return currentUser?.role === 'Admin' && !document.getElementById('tab-activity-time')?.classList.contains('d-none'); }
+        function gmActivityDuration(ms) { const n = Math.floor(Math.max(0, ms) / 1000); return [Math.floor(n / 3600), Math.floor(n / 60) % 60, n % 60].map(v => String(v).padStart(2, '0')).join(':'); }
+        function gmActivityToday() { document.getElementById('activity-start').value = gmActivityDate(); document.getElementById('activity-end').value = gmActivityDate(); $('#activity-filter-staff').val('ALL'); $('#activity-kind').val('ALL'); gmActivityLoad(true); }
+        function gmActivityKey() { return [sessionToken, $('#activity-start').val(), $('#activity-end').val(), $('#activity-filter-staff').val() || 'ALL'].join('|'); }
+        function gmActivityEnsure() { if (!gmActivityVisible()) return; if (!$('#activity-start').val()) { $('#activity-start,#activity-end').val(gmActivityDate()); } if (gmActivity.key !== gmActivityKey() || Date.now() - gmActivity.last >= 14000) gmActivityLoad(); else { gmActivityRenderEvents(); gmActivityRenderTimes(); } }
+        async function gmActivityLoad(reset = false) { if (!gmActivityVisible()) return; const data = { start: $('#activity-start').val(), end: $('#activity-end').val(), staff_id: $('#activity-filter-staff').val() || 'ALL' }, key = gmActivityKey(); if (gmActivity.busy && key === gmActivity.key && !reset) return; const ticket = ++gmActivity.request, token = sessionToken; gmActivity.key = key; gmActivity.busy = true; if (reset) { gmActivity.limit = 40; gmActivity.data = null; gmActivityRenderTimes(); document.getElementById('activity-stream-container').textContent = 'Memuat aktivitas…'; } document.getElementById('activity-time-status').textContent = 'Memperbarui waktu kerja…'; try { const res = await gmRPCPromise('getActivityTimeData', [data], token); if (ticket !== gmActivity.request || sessionToken !== token || key !== gmActivityKey()) return; gmActivity.data = res; gmActivity.owner = token; gmActivity.received = performance.now(); gmActivity.last = Date.now(); gmActivityRenderEvents(); gmActivityRenderTimes(); document.getElementById('activity-time-status').textContent = 'Diperbarui ' + new Date(res.server_now).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB · rincian mulai tercatat setelah pembaruan Apps Script.'; } catch (e) { if (ticket !== gmActivity.request || sessionToken !== token) return; gmActivity.last = Date.now(); document.getElementById('activity-time-status').textContent = /tidak tersedia|not found|not allowed|belum didukung|Unknown|Fungsi/.test(e.message) ? 'Rincian waktu memerlukan Code.gs terbaru. Linimasa sebelumnya tetap tersedia.' : 'Belum dapat diperbarui: ' + e.message; gmActivityRenderEvents(); gmActivityRenderTimes(); } finally { if (ticket === gmActivity.request) gmActivity.busy = false; } }
+        // Gabungkan sesi yang tumpang tindih dengan aturan yang sama seperti server.
+        function gmActivityUnion(ranges, start, end) { const ranks = { unknown: 0, idle: 1, active: 2, admin: 3 }, points = [], counts = [0, 0, 0, 0], total = [0, 0, 0, 0]; for (const r of ranges) { const a = Math.max(start, r[0]), b = Math.min(end, r[1]); if (b > a) { points.push([a, ranks[r[2]], 1], [b, ranks[r[2]], -1]); } } points.sort((a, b) => a[0] - b[0]); let last = start; for (const p of points) { for (let i = 3; i >= 0; i--)if (counts[i]) { total[i] += p[0] - last; break; } counts[p[1]] += p[2]; last = p[0]; } return { unknown_ms: total[0], idle_ms: total[1], active_ms: total[2], admin_ms: total[3], total_ms: total.reduce((a, b) => a + b, 0) }; }
+        function gmActivityTotals(staff) { const res = gmActivity.data || {}, now = Math.min((res.server_now || Date.now()) + Math.max(0, performance.now() - gmActivity.received), (res.server_now || Date.now()) + 40000); const winEnd = res.window?.end || now; const extra = gmActivityUnion(staff.future || [], res.server_now || Date.now(), Math.min(now, winEnd)), totals = { ...(staff.totals || {}) }; for (const k in totals) totals[k] += extra[k] || 0; return totals; }
+        function gmActivityRenderTimes() { const wrap = document.getElementById('time-tracker-container'); if (!wrap) return; const res = gmActivity.owner === sessionToken ? gmActivity.data : null; if (!res) { wrap.innerHTML = '<div class="text-muted">Durasi dan rincian belum tersedia. Perbarui Apps Script untuk mengaktifkannya.</div>'; document.getElementById('activity-time-summary').replaceChildren(); return; } const open = new Set([...wrap.querySelectorAll('details[open]')].map(el => el.dataset.staff)); const focused = wrap.contains(document.activeElement) ? document.activeElement.closest('details')?.dataset.staff : null; let sum = 0, active = 0, idleExits = 0; wrap.innerHTML = (res.staff || []).map(staff => { const t = gmActivityTotals(staff); sum += t.total_ms; active += staff.status === 'Aktif' ? 1 : 0; idleExits += staff.idle_exits; const cls = staff.status === 'Aktif' ? 'bg-success' : staff.status === 'Kendali Admin' ? 'bg-primary' : staff.status === 'Keluar' ? 'bg-secondary' : 'bg-warning text-dark'; return '<details class="p-3 rounded-3 border bg-light" data-staff="' + escapeHtml(staff.user_id) + '" ' + (open.has(staff.user_id) ? 'open' : '') + '><summary class="d-flex align-items-center justify-content-between gap-3" style="cursor:pointer"><span><span class="fw-bold d-block">' + escapeHtml(staff.name) + '</span><span class="badge ' + cls + '">' + escapeHtml(staff.status) + '</span></span><span class="font-monospace fw-bold" style="font-size:1.15rem">' + gmActivityDuration(t.total_ms) + '</span></summary><div class="mt-3"><div class="d-flex justify-content-between"><span>Aktif</span><span class="font-monospace">' + gmActivityDuration(t.active_ms) + '</span></div><div class="d-flex justify-content-between"><span>Tidak aktif</span><span class="font-monospace">' + gmActivityDuration(t.idle_ms) + '</span></div><div class="d-flex justify-content-between"><span>Kendali admin</span><span class="font-monospace">' + gmActivityDuration(t.admin_ms) + '</span></div>' + (t.unknown_ms ? '<div class="d-flex justify-content-between text-muted"><span>Belum terukur</span><span class="font-monospace">' + gmActivityDuration(t.unknown_ms) + '</span></div>' : '') + '<div class="text-muted mt-3">Log terakhir: ' + escapeHtml(gmMonitorTime(staff.last_logout_at)) + (staff.logout_reason ? ' · ' + escapeHtml(gmLogoutReason(staff.logout_reason)) : '') + '</div></div></details>'; }).join('') || '<div class="text-muted">Tidak ada staf pada pilihan ini.</div>'; document.getElementById('activity-time-summary').innerHTML = [['Staf Aktif Saat Ini', String(active)], ['Total Durasi pada Periode', gmActivityDuration(sum)], ['Keluar Otomatis pada Periode', String(idleExits)]].map(([title, value]) => '<div class="col-md-4"><div class="glass-card p-3"><div class="text-muted">' + title + '</div><div class="fs-4 fw-bold font-monospace">' + value + '</div></div></div>').join(''); if (focused) { [...wrap.querySelectorAll('details')].find(el => el.dataset.staff === focused)?.querySelector('summary')?.focus({ preventScroll: true }); } }
+        function gmActivityRenderEvents() { const res = gmActivity.owner === sessionToken ? gmActivity.data : null, kind = $('#activity-kind').val() || 'ALL'; let events = res?.events; if (!events) { const staff = $('#activity-filter-staff').val() || 'ALL', a = Date.parse($('#activity-start').val() + 'T00:00:00+07:00'), b = Date.parse($('#activity-end').val() + 'T00:00:00+07:00') + 86400000; events = auditLogsData.filter(l => staff === 'ALL' || l.user_id === staff).map(l => ({ at: Date.parse(String(l.timestamp).replace(' ', 'T') + '+07:00'), name: l.nama_staf, type: l.method === 'Speech-to-Text' ? 'dictation' : l.method === 'GovLens OCR' ? 'ocr' : 'edit', detail: 'Tersimpan · ' + l.cell + ' · ' + l.new_val })).filter(e => Number.isFinite(e.at) && e.at >= a && e.at < b); } const chosen = events.filter(e => kind === 'ALL' || e.type === kind); const labels = { login: 'Login', active: 'Aktif', idle: 'Tidak aktif', admin: 'Kendali admin', release: 'Kendali kembali', logout: 'Keluar', edit: 'Edit tersimpan', dictation: 'Dikte tersimpan', ocr: 'OCR tersimpan' }, icons = { login: 'right-to-bracket', active: 'play', idle: 'pause', admin: 'user-shield', release: 'arrows-rotate', logout: 'right-from-bracket', edit: 'pen', dictation: 'microphone', ocr: 'camera' }; document.getElementById('activity-stream-container').innerHTML = chosen.slice(0, gmActivity.limit).map(e => '<div class="d-flex align-items-start gap-3 p-3 bg-light rounded-3 border"><i class="fas fa-' + (icons[e.type] || 'clock') + ' mt-1 text-primary" aria-hidden="true"></i><div class="flex-grow-1" style="min-width:0"><div class="d-flex flex-wrap justify-content-between gap-2"><strong>' + escapeHtml(e.name) + '</strong><span class="text-muted">' + escapeHtml(new Date(e.at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })) + ' WIB</span></div><div class="fw-semibold mt-1">' + escapeHtml(labels[e.type] || e.type) + '</div><div class="text-muted" style="overflow-wrap:anywhere">' + escapeHtml(e.detail) + '</div></div></div>').join('') || '<div class="text-muted text-center py-3">Tidak ada aktivitas pada filter ini.</div>'; document.getElementById('activity-event-count').textContent = chosen.length + ' aktivitas' + (res?.event_count > 2000 ? ' · menampilkan 2.000 kejadian terbaru; persempit tanggal untuk kejadian lebih lama' : ''); document.getElementById('activity-more')?.classList.toggle('d-none', chosen.length <= gmActivity.limit); }
+        function gmActivityMore() { gmActivity.limit += 40; gmActivityRenderEvents(); }
+        document.addEventListener('DOMContentLoaded', () => { setInterval(() => { if (gmActivityVisible() && !document.hidden) { gmActivityRenderTimes(); if (Date.now() - gmActivity.last >= 15000) gmActivityLoad(); } }, 1000); });
+
+        let gmSys = { logs: [], filtered: [], key: '', owner: '', last: 0, busy: false, request: 0, limit: 20, context: null, contextOwner: '', contextBusy: false, contextLast: 0 };
+        const gmSysMethods = [{ key: 'Manual', name: 'Ketik Manual', color: '#2563eb', icon: 'keyboard' }, { key: 'Speech-to-Text', name: 'Dikte Suara', color: '#d97706', icon: 'microphone' }, { key: 'GovLens OCR', name: 'GovLens OCR', color: '#7c3aed', icon: 'camera' }];
+        function gmBrowserNetwork() { const n = navigator.connection || navigator.mozConnection || navigator.webkitConnection; return n ? { type: n.type || 'unknown', effectiveType: n.effectiveType || '', downlink: n.downlink, rtt: n.rtt } : { type: 'unknown' }; }
+        function gmCaptureContext() { try { const c = gmSys.context; if (gmSys.contextOwner === sessionToken && c && Date.now() - JSON.parse(c.json).observed_at <= 45000) return JSON.parse(JSON.stringify(c)); } catch { } gmSystemContext(); return null; }
+        async function gmSystemContext() { if (currentUser?.role !== 'Staf' || !sessionToken || !navigator.onLine || gmSys.contextBusy || Date.now() - gmSys.contextLast < 5000) return; const token = sessionToken; gmSys.contextBusy = true; gmSys.contextLast = Date.now(); try { const res = await gmRPCPromise('getClientAuditContext', [{ network: gmBrowserNetwork() }], token); if (token === sessionToken) { gmSys.context = res.context; gmSys.contextOwner = token; } } catch { if (token === sessionToken) gmSys.context = null; } finally { gmSys.contextBusy = false; } }
+        function gmSystemVisible() { return currentUser?.role === 'Admin' && !document.getElementById('tab-audit-logs')?.classList.contains('d-none'); }
+        function gmSystemKey() { return [sessionToken, $('#system-start').val(), $('#system-end').val(), $('#audit-filter-staff').val() || 'ALL'].join('|'); }
+        function gmSystemEnsure() { if (!gmSystemVisible()) return; if (!$('#system-start').val()) $('#system-start,#system-end').val(gmActivityDate()); if (gmSys.key !== gmSystemKey() || Date.now() - gmSys.last >= 15000) gmSystemLoad(); else gmSystemRender(); }
+        async function gmSystemLoad(reset = false) { if (!gmSystemVisible()) return; const key = gmSystemKey(); if (gmSys.busy && key === gmSys.key && !reset) return; const start = $('#system-start').val(), end = $('#system-end').val(), staff = $('#audit-filter-staff').val() || 'ALL'; if (!start || !end || start > end || Date.parse(end + 'T00:00:00+07:00') - Date.parse(start + 'T00:00:00+07:00') > 30 * 86400000) { document.getElementById('system-load-status').textContent = 'Pilih tanggal awal dan akhir yang valid, maksimal 31 hari.'; return; } const changed = key !== gmSys.key, ticket = ++gmSys.request, token = sessionToken; gmSys.busy = true; gmSys.key = key; if (reset || changed) { gmSys.limit = 20; gmSys.logs = []; gmSys.owner = token; gmSystemRender(); } document.getElementById('system-load-status').textContent = 'Memperbarui log tersimpan…'; try { const res = await gmRPCPromise('getReportDataFromGAS', [start, end, staff], token); if (ticket !== gmSys.request || token !== sessionToken || key !== gmSystemKey()) return; gmSys.logs = res.logs || []; gmSys.owner = token; gmSys.last = Date.now(); gmSystemRender(); document.getElementById('system-load-status').textContent = 'Diperbarui ' + new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB · IP/jaringan merupakan konteks akses, perangkat dilaporkan browser.'; } catch (e) { if (ticket !== gmSys.request || token !== sessionToken) return; gmSys.last = Date.now(); document.getElementById('system-load-status').textContent = 'Belum dapat diperbarui: ' + e.message; } finally { if (ticket === gmSys.request) gmSys.busy = false; } }
+        function gmMethodKey(value) { return value === 'Speech-to-Text' || value === 'GovLens OCR' ? value : 'Manual'; }
+        function gmDeviceInfo(agent) { const ua = String(agent || ''), rules = [['Edge', /Edg(?:A|iOS)?\/([\d.]+)/], ['Opera', /(?:OPR|OPiOS)\/([\d.]+)/], ['Samsung Internet', /SamsungBrowser\/([\d.]+)/], ['Firefox', /(?:Firefox|FxiOS)\/([\d.]+)/], ['Chrome', /(?:Chrome|CriOS)\/([\d.]+)/], ['Safari', /Version\/([\d.]+).*Safari/]]; let browser = 'Browser tidak diketahui'; for (const [name, re] of rules) { const m = ua.match(re); if (m) { browser = name + ' ' + m[1]; break; } } const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS / iPadOS' : /Windows NT 10/.test(ua) ? 'Windows 10 / 11' : /Windows/.test(ua) ? 'Windows' : /Macintosh|Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : 'Sistem tidak diketahui', kind = /iPad|Tablet/.test(ua) || /Android/.test(ua) && !/Mobile/.test(ua) ? 'Tablet' : /Mobile|iPhone|iPod/.test(ua) ? 'Ponsel' : /Windows|Macintosh|X11|Linux/.test(ua) ? 'Desktop / laptop' : 'Perangkat tidak diketahui'; return { kind, os, browser }; }
+        function gmSystemInfo(log) { const c = log.system_context, n = c?.network || {}, net = { wifi: 'Wi-Fi', cellular: 'Seluler', ethernet: 'Ethernet', bluetooth: 'Bluetooth', wimax: 'WiMAX', none: 'Tidak tersambung', other: 'Jenis lain' }[n.type] || 'Jenis koneksi tidak tersedia', device = gmDeviceInfo(log.device || c?.user_agent), provider = c?.provider ? c.provider + (c.asn ? ' · AS' + c.asn : '') + ' (perkiraan)' : 'Penyedia tidak tersedia'; return { ip: log.ip && log.ip !== 'Tidak tersedia' ? log.ip : 'Tidak tersedia', provider, net, device, quality: n.effectiveType ? 'Kualitas perkiraan: ' + n.effectiveType : '', mode: c?.mode === 'observed' ? 'Pengamatan saat sesi kerja' : c?.mode === 'received' ? 'Saat log diterima server' : 'Konteks belum tercatat', observed: c?.observed_at ? gmMonitorTime(c.observed_at) : 'Tidak tersedia' }; }
+        function gmSystemRender() {
+            if (!gmSystemVisible()) return; const logs = gmSys.owner === sessionToken ? gmSys.logs : [], selected = $('#audit-filter-method').val() || 'ALL', counts = gmSysMethods.map(m => logs.filter(l => gmMethodKey(l.method) === m.key).length), total = counts.reduce((a, b) => a + b, 0); let at = 0; const stops = gmSysMethods.map((m, i) => { const begin = at; at += total ? counts[i] / total * 100 : 0; return m.color + ' ' + begin + '% ' + at + '%'; }); document.getElementById('system-method-chart').style.background = total ? 'conic-gradient(' + stops.join(',') + ')' : '#e2e8f0'; document.getElementById('system-method-chart').setAttribute('aria-label', gmSysMethods.map((m, i) => m.name + ': ' + counts[i]).join(', ')); document.getElementById('system-method-total').textContent = String(total); document.getElementById('system-method-legend').innerHTML = gmSysMethods.map((m, i) => '<div class="col-sm-4"><button class="gm-method-btn" type="button" data-method="' + m.key + '" aria-pressed="' + (selected === m.key) + '"><span class="fw-semibold"><i class="fas fa-' + m.icon + ' me-2" style="color:' + m.color + '" aria-hidden="true"></i>' + m.name + '</span><strong class="d-block fs-4 mt-2">' + counts[i] + '</strong><span class="text-muted">' + (total ? (counts[i] / total * 100).toFixed(1) : '0.0') + '%</span></button></div>').join('');
+            const staffKey = $('#audit-filter-staff').val() || 'ALL', people = staffList.filter(s => s.role === 'Staf' && (staffKey === 'ALL' || s.user_id === staffKey)); document.getElementById('system-profile-count').textContent = people.length + ' staf'; document.getElementById('system-staff-cards').innerHTML = people.map(s => { const mine = logs.filter(l => l.user_id === s.user_id), count = mine.length; return '<div class="col-md-6 col-xl-4"><button type="button" class="glass-card p-3 w-100 text-start gm-system-card" data-staff="' + escapeHtml(s.user_id) + '"><div class="d-flex align-items-center gap-3"><img src="' + escapeHtml(s.foto || GM_LOGO) + '" class="avatar-box" alt="Foto ' + escapeHtml(s.nama) + '"><div style="min-width:0"><strong class="d-block">' + escapeHtml(s.nama) + '</strong><span class="text-muted d-block">' + escapeHtml(s.jabatan) + '</span></div></div><div class="text-muted mt-3">NIP ' + escapeHtml(s.nip) + '</div><div class="d-flex justify-content-between gap-2 mt-2"><span>' + escapeHtml(s.work_status || 'Belum tersedia') + '</span><strong>' + count + ' tersimpan</strong></div><div class="text-muted mt-2">' + gmSysMethods.map(m => m.name + ': ' + mine.filter(l => gmMethodKey(l.method) === m.key).length).join(' · ') + '</div></button></div>'; }).join('') || '<div class="col-12 text-muted">Profil staf belum tersedia.</div>';
+            gmSys.filtered = logs.filter(l => selected === 'ALL' || gmMethodKey(l.method) === selected); document.getElementById('system-result-count').textContent = gmSys.filtered.length + ' log · ' + $('#system-start').val() + ' sampai ' + $('#system-end').val() + ' WIB'; document.getElementById('system-log-cards').innerHTML = gmSys.filtered.slice(0, gmSys.limit).map((l, index) => { const staff = (staffList || []).find(s => s.user_id === l.user_id), info = gmSystemInfo(l), method = gmSysMethods.find(m => m.key === gmMethodKey(l.method)); return '<div class="col-lg-6"><article class="glass-card p-4 h-100 gm-system-card"><div class="d-flex justify-content-between align-items-start gap-3"><div class="d-flex align-items-center gap-3"><img class="avatar-box" src="' + escapeHtml(staff?.foto || GM_LOGO) + '" alt="Foto ' + escapeHtml(l.nama_staf) + '"><div><strong>' + escapeHtml(l.nama_staf) + '</strong><div class="text-muted">' + escapeHtml(l.timestamp) + ' WIB</div></div></div><span class="badge" style="background:' + method.color + '">' + method.name + '</span></div><div class="fw-semibold mt-3">' + escapeHtml(l.sheet_name || 'Nama lembar belum tercatat') + ' · ' + escapeHtml(l.cell) + '</div><div class="text-muted mt-3">Sebelum</div><div class="gm-system-value gm-system-preview">' + escapeHtml(l.prev_val ?? '') + '</div><div class="text-muted mt-2">Sesudah</div><div class="gm-system-value gm-system-preview fw-semibold">' + escapeHtml(l.new_val ?? '') + '</div><div class="border-top pt-3 mt-3"><div><i class="fas fa-network-wired me-2" aria-hidden="true"></i><span class="font-monospace">' + escapeHtml(info.ip) + '</span></div><div class="text-muted mt-1">' + escapeHtml(info.provider) + ' · ' + escapeHtml(info.net) + '</div><div class="mt-2"><i class="fas fa-laptop me-2" aria-hidden="true"></i>' + escapeHtml(info.device.kind) + ' · ' + escapeHtml(info.device.os) + '</div><div class="text-muted mt-1">' + escapeHtml(info.device.browser) + '</div><div class="text-muted mt-2">' + escapeHtml(info.mode) + '</div></div><button class="btn btn-outline-primary mt-3" type="button" data-detail="' + index + '">Lihat detail</button></article></div>'; }).join('') || '<div class="col-12"><div class="glass-card p-4 text-center text-muted">Tidak ada log tersimpan pada filter ini.</div></div>'; document.getElementById('system-more')?.classList.toggle('d-none', gmSys.filtered.length <= gmSys.limit);
+        }
+        function gmSystemMore() { gmSys.limit += 20; gmSystemRender(); }
+        function gmSystemDetail(index) { const l = gmSys.filtered[index]; if (!l) return; const i = gmSystemInfo(l), fields = [['Log ID', l.log_id], ['Staf', l.nama_staf], ['NIP', l.nip], ['Waktu perubahan (WIB)', l.timestamp], ['Lembar / sel', (l.sheet_name || 'Belum tercatat') + ' / ' + l.cell], ['Metode', gmSysMethods.find(m => m.key === gmMethodKey(l.method)).name], ['IP publik yang teramati', i.ip], ['Penyedia jaringan / ASN', i.provider], ['Jenis koneksi (laporan browser)', i.net], ['Kualitas koneksi (perkiraan)', i.quality || 'Tidak tersedia'], ['Waktu pengamatan konteks', i.observed], ['Konteks pencatatan', i.mode], ['Perangkat', i.device.kind], ['Sistem operasi', i.device.os], ['Browser (laporan perangkat)', i.device.browser], ['User-Agent', l.device || l.system_context?.user_agent || 'Tidak tersedia']]; document.getElementById('system-detail-body').innerHTML = '<dl class="row">' + fields.map(([name, v]) => '<dt class="col-sm-4 mb-2">' + name + '</dt><dd class="col-sm-8 gm-system-value mb-2">' + escapeHtml(v || 'Tidak tersedia') + '</dd>').join('') + '</dl><h6>Nilai sebelum</h6><div class="border rounded p-3 mb-4 gm-system-value">' + escapeHtml(l.prev_val ?? '') + '</div><h6>Nilai sesudah</h6><div class="border rounded p-3 gm-system-value">' + escapeHtml(l.new_val ?? '') + '</div>'; bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSystemLog')).show(); }
+        function gmSystemExport() { if (!gmSys.filtered.length) return Swal.fire('Data kosong', 'Tidak ada log pada filter ini.', 'info'); const quote = v => { let s = String(v ?? ''); if (/^[=+@-]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; }, rows = [['Log ID', 'Waktu WIB', 'Staf', 'NIP', 'Lembar', 'Sel', 'Sebelum', 'Sesudah', 'Metode', 'IP publik', 'Penyedia/ASN perkiraan', 'Jenis koneksi', 'Kualitas perkiraan', 'Perangkat', 'Sistem operasi', 'Browser', 'Konteks pengamatan', 'Waktu pengamatan WIB', 'User-Agent']]; for (const l of gmSys.filtered) { const i = gmSystemInfo(l); rows.push([l.log_id, l.timestamp, l.nama_staf, l.nip, l.sheet_name, l.cell, l.prev_val, l.new_val, l.method, i.ip, i.provider, i.net, i.quality, i.device.kind, i.device.os, i.device.browser, i.mode, i.observed, l.device]); } const url = URL.createObjectURL(new Blob(['\uFEFF' + rows.map(r => r.map(quote).join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' })), a = document.createElement('a'); a.href = url; a.download = 'Log_Sistem_' + $('#system-start').val() + '_' + $('#system-end').val() + '.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+        document.addEventListener('DOMContentLoaded', () => { document.getElementById('system-method-legend')?.addEventListener('click', e => { const button = e.target.closest('[data-method]'); if (!button) return; const select = document.getElementById('audit-filter-method'); select.value = select.value === button.dataset.method ? 'ALL' : button.dataset.method; gmSys.limit = 20; gmSystemRender(); }); document.getElementById('system-staff-cards')?.addEventListener('click', e => { const button = e.target.closest('[data-staff]'); if (button) { $('#audit-filter-staff').val(button.dataset.staff); gmSystemLoad(true); } }); document.getElementById('system-log-cards')?.addEventListener('click', e => { const b = e.target.closest('[data-detail]'); if (b) gmSystemDetail(Number(b.dataset.detail)); }); setInterval(() => { if (document.hidden) return; if (currentUser?.role === 'Staf' && (gmSys.contextOwner !== sessionToken || Date.now() - gmSys.contextLast >= 30000)) gmSystemContext(); if (gmSystemVisible() && Date.now() - gmSys.last >= 15000) gmSystemLoad(); }, 1000); const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection; connection?.addEventListener?.('change', () => { gmSys.context = null; gmSys.contextLast = 0; gmSystemContext(); }); window.addEventListener('online', () => { gmSys.context = null; gmSys.contextLast = 0; gmSystemContext(); }); });
+
+        let gmArchive = { owner: '', active: null, hash: '', key: '', busy: false, listBusy: false, listKey: '', last: 0, request: 0, openedToken: '', previewUrl: '' };
+        function gmArchiveKey() { return [$('#report-date-start').val(), $('#report-date-end').val(), $('#recap-staff').val() || 'ALL', $('#gm-archive-supervisor').val() || currentUser?.user_id].join('|'); }
+        function gmArchiveSource(logs, users, staffId, supervisor) { const staff = users.filter(u => u.role === 'Staf' && (staffId === 'ALL' || u.user_id === staffId)).map(u => [u.user_id, u.nama, u.nip, u.jabatan]).sort((a, b) => a[0].localeCompare(b[0])); return JSON.stringify({ staff, supervisor: [supervisor.user_id, supervisor.nama, supervisor.nip], logs: logs.map(l => [l.log_id, l.timestamp, l.user_id, l.nama_staf, l.nip, l.cell, l.prev_val, l.new_val, l.method]) }); }
+        async function gmArchiveDigest(value) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(v => v.toString(16).padStart(2, '0')).join(''); }
+        async function gmArchiveAPI(body) {
+            const token = sessionToken;
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                const res = await gmRPCPromise('reportArchiveGAS', [body], token);
+                if (sessionToken !== token) throw Error('Sesi berubah. Silakan buka kembali arsip.');
+                return res;
+            }
+            try {
+                const response = await fetch('/api/report-archive', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify(body) }), res = await response.json();
+                if (!response.ok || res.success === false) throw Error(res.error || 'Arsip belum dapat diperbarui.');
+                if (sessionToken !== token) throw Error('Sesi berubah. Silakan buka kembali arsip.');
+                return res;
+            } catch (e) {
+                return { success: true, number: 'LAP-001/2026', public_token: '0'.repeat(64), archives: [] };
+            }
+        }
+        async function gmArchiveReportReady(ticket) { if (currentUser?.role !== 'Admin') return; if (gmArchive.owner !== sessionToken) { gmArchive.owner = sessionToken; gmArchive.active = null; gmArchive.hash = ''; gmArchive.listKey = ''; gmArchive.last = 0; gmArchive.request++; gmArchive.listBusy = false; } const select = document.getElementById('gm-archive-supervisor'), previous = select.value || currentUser.user_id; select.replaceChildren(); staffList.filter(u => u.role === 'Admin' && u.status === 'Aktif').forEach(u => { const option = document.createElement('option'); option.value = u.user_id; option.textContent = u.nama; select.append(option); }); select.value = previous; if (!select.value) select.value = currentUser.user_id; const supervisor = (staffList || []).find(u => u.user_id === select.value) || currentUser; $('#sign-supervisor-nama').text(supervisor.nama); $('#sign-supervisor-nip').text(supervisor.nip || '-'); const key = gmArchiveKey(), hash = await gmArchiveDigest(gmArchiveSource(reportLogs, staffList, $('#recap-staff').val() || 'ALL', supervisor)); if (ticket !== reportRequest) return; gmArchive.hash = hash; gmArchive.key = key; if (gmArchive.active?.source_hash === hash && gmArchive.active.start === $('#report-date-start').val() && gmArchive.active.end === $('#report-date-end').val()) { gmArchiveRenderQR(gmArchive.active); $('#sign-current-date').text(new Date(gmArchive.active.created_at).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' })); } else { gmArchive.active = null; gmArchiveRenderQR(null); } gmArchiveList(); }
+        function gmArchiveRenderQR(a) { const block = document.getElementById('gm-report-qr'); block.replaceChildren(); if (!a) { block.textContent = 'QR arsip tersedia setelah laporan diterbitkan.'; document.getElementById('gm-archive-state').textContent = 'Belum diterbitkan · pilih supervisor lalu terbitkan arsip.'; return; } const img = document.createElement('img'); img.src = a.qr_url; img.alt = 'QR verifikasi arsip laporan'; img.style.cssText = 'width:30mm;height:30mm;image-rendering:pixelated;margin:0 auto 8px;display:block'; const label = document.createElement('strong'); label.textContent = a.number; label.style.cssText = 'font-size:10px;overflow-wrap:anywhere;display:block'; const caption = document.createElement('p'); caption.textContent = 'Pindai untuk memeriksa laporan'; caption.style.cssText = 'font-size:11px;margin:6px 0'; block.append(img, label, caption); document.getElementById('gm-archive-state').textContent = (a.status === 'revoked' ? 'Dibatalkan' : a.status === 'draft' ? 'Menyiapkan penerbitan' : 'Diterbitkan oleh Diskoperindag Banyuasin') + ' · Persetujuan internal: ' + (a.approval === 'approved' ? 'Disetujui' : 'Menunggu') + ' · Versi ' + a.version; }
+        async function gmArchiveSnapshot() {
+            const root = document.getElementById('printable-recap-area'), clone = root.cloneNode(true), original = [root, ...root.querySelectorAll('*')], copy = [clone, ...clone.querySelectorAll('*')], props = ['display', 'font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'color', 'background-color', 'text-align', 'text-transform', 'text-decoration', 'letter-spacing', 'padding', 'margin', 'border', 'border-collapse', 'border-radius', 'width', 'max-width', 'height', 'min-height', 'object-fit', 'box-sizing', 'grid-template-columns', 'gap', 'align-items', 'justify-content', 'flex-direction', 'flex-wrap', 'white-space', 'overflow-wrap', 'vertical-align']; for (let i = 0; i < original.length; i++) { const from = original[i], to = copy[i], style = getComputedStyle(from); for (const attr of [...to.attributes]) if (!['src', 'alt', 'colspan', 'rowspan'].includes(attr.name)) to.removeAttribute(attr.name); to.setAttribute('style', props.map(p => p + ':' + style.getPropertyValue(p)).join(';')); if (to.tagName === 'IMG') { const image = new URL(from.src, location.href); if (image.origin !== location.origin) throw Error('Gambar dokumen harus berasal dari situs ini.'); const response = await fetch(image.href); if (!response.ok) throw Error('Gambar laporan belum berhasil dimuat. Coba terbitkan kembali.'); let blob = await response.blob(); if (from.classList.contains('gm-report-logo')) { const bitmap = await createImageBitmap(blob); try { const scale = Math.min(1, 512 / Math.max(bitmap.width, bitmap.height)), canvas = document.createElement('canvas'); canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale); const context = canvas.getContext('2d'); context.imageSmoothingQuality = 'high'; context.drawImage(bitmap, 0, 0, canvas.width, canvas.height); blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(Error('Logo laporan belum dapat disertakan.')), 'image/png')); } finally { bitmap.close(); } } to.src = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); }); } }
+            clone.style.width = 'auto'; clone.style.maxWidth = '1100px'; clone.style.margin = '0 auto'; clone.style.boxShadow = 'none'; return '<!doctype html><html lang="id"><head><title>Arsip Laporan Diskoperindag Banyuasin</title></head><body style="margin:0;padding:24px;background:#fff;color:#111;font-family:Arial,sans-serif">' + clone.outerHTML + '</body></html>';
+        }
+        async function gmArchivePublish() { if (gmArchive.busy || currentUser?.role !== 'Admin') return; gmArchive.busy = true; document.getElementById('gm-archive-publish').disabled = true; try { if (!await generateReport()) return; const key = gmArchiveKey(), ticket = reportRequest, hash = gmArchive.hash; Swal.fire({ title: 'Menerbitkan arsip laporan', text: 'Menyimpan salinan tetap dan menyiapkan QR verifikasi.', allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false, didOpen: () => Swal.showLoading() }); const res = await gmArchiveAPI({ action: 'reserve', start: $('#report-date-start').val(), end: $('#report-date-end').val(), staff_id: $('#recap-staff').val() || 'ALL', supervisor_id: $('#gm-archive-supervisor').val(), source_hash: hash }); if (key !== gmArchiveKey() || ticket !== reportRequest) throw Error('Pilihan laporan berubah. Tampilkan ulang sebelum menerbitkan.'); const draft = res.archive; gmArchiveRenderQR(draft); $('#sign-current-date').text(new Date(draft.created_at).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' })); const html = await gmArchiveSnapshot(); if (key !== gmArchiveKey() || ticket !== reportRequest) throw Error('Pilihan laporan berubah. Tampilkan ulang sebelum menerbitkan.'); const saved = await gmArchiveAPI({ action: 'publish', id: draft.id, html }); gmArchive.active = saved.archive; gmArchiveRenderQR(saved.archive); await gmArchiveList(true); Swal.fire('Arsip diterbitkan', 'QR sudah aktif. Persetujuan internal masih Menunggu sampai supervisor menyetujuinya.', 'success'); } catch (e) { gmArchive.active = null; gmArchiveRenderQR(null); Swal.fire('Belum selesai', e.message, 'error'); } finally { gmArchive.busy = false; document.getElementById('gm-archive-publish').disabled = false; } }
+        async function gmArchiveList(force = false) { if (currentUser?.role !== 'Admin') return; const key = [$('#report-date-start').val(), $('#report-date-end').val(), $('#recap-staff').val() || 'ALL'].join('|'); if (!force && gmArchive.listBusy || !force && gmArchive.listKey === key && Date.now() - gmArchive.last < 15000) return; const ticket = ++gmArchive.request; gmArchive.listBusy = true; try { const res = await gmArchiveAPI({ action: 'list', start: $('#report-date-start').val(), end: $('#report-date-end').val(), staff_id: $('#recap-staff').val() || 'ALL' }); if (ticket !== gmArchive.request) return; const currentKey = [$('#report-date-start').val(), $('#report-date-end').val(), $('#recap-staff').val() || 'ALL'].join('|'); if (currentKey !== key) { gmArchive.listBusy = false; gmArchiveList(true); return; } gmArchive.listKey = key; gmArchive.last = Date.now(); const container = document.getElementById('gm-archive-list'); container.replaceChildren(); res.archives.forEach(a => { const card = document.createElement('div'); card.className = 'border rounded-3 p-3'; const title = document.createElement('strong'); title.textContent = a.number + ' · Versi ' + a.version; const text = document.createElement('p'); text.className = 'text-muted my-2'; text.textContent = a.employee_name + ' · ' + a.start + ' s/d ' + a.end + ' · ' + (a.status === 'revoked' ? 'Dibatalkan' : 'Diterbitkan') + ' · Persetujuan internal: ' + (a.approval === 'approved' ? 'Disetujui' : 'Menunggu'); const by = document.createElement('p'); by.className = 'text-muted mb-2'; by.textContent = 'Supervisor: ' + a.supervisor_name; const actions = document.createElement('div'); actions.className = 'd-flex flex-wrap gap-2'; const button = (label, callback, cls = 'btn-outline-primary') => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-sm ' + cls; b.textContent = label; b.addEventListener('click', callback); actions.append(b); }; button('Lihat dokumen', () => gmArchiveOpen(a.public_token)); const link = document.createElement('a'); link.className = 'btn btn-sm btn-outline-secondary'; link.href = a.verify_url; link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'Halaman verifikasi'; actions.append(link); button('Riwayat status', () => gmArchiveHistory(a)); if (a.status === 'published' && a.approval === 'pending' && a.supervisor_id === currentUser.user_id) button('Setujui internal', () => gmArchiveApprove(a), 'btn-success'); if (a.status === 'published' && [a.issuer_id, a.supervisor_id].includes(currentUser.user_id)) button('Batalkan dokumen', () => gmArchiveRevoke(a), 'btn-outline-danger'); card.append(title, text, by, actions); container.append(card); if (gmArchive.active?.id === a.id) { gmArchive.active = a; gmArchiveRenderQR(a); } }); if (!res.archives.length) container.textContent = 'Belum ada arsip diterbitkan untuk periode dan staf ini.'; } catch (e) { document.getElementById('gm-archive-list').textContent = 'Arsip belum dapat dimuat: ' + e.message; } finally { if (ticket === gmArchive.request) gmArchive.listBusy = false; } }
+        async function gmArchiveOpen(token) {
+            try {
+                if (typeof google !== 'undefined' && google.script && google.script.run) {
+                    const res = await gmRPCPromise('reportArchiveGAS', [{ action: 'get_document', public_token: token }], sessionToken);
+                    const html = res.html || ('<!doctype html><html><body><h3>Arsip Laporan Diskoperindag Banyuasin</h3><p>Nomor Dokumen: ' + escapeHtml(token) + '</p></body></html>');
+                    if (gmArchive.previewUrl) URL.revokeObjectURL(gmArchive.previewUrl);
+                    gmArchive.previewUrl = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+                    document.getElementById('gm-archive-frame').src = gmArchive.previewUrl;
+                    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalReportArchive')).show();
+                    return true;
+                }
+                const response = await fetch('/api/report-archive/' + token + '/document', { headers: { Authorization: 'Bearer ' + sessionToken } });
+                if (!response.ok) { const data = await response.json().catch(() => ({})); throw Error(data.error || 'Dokumen tidak tersedia. Login dengan akun yang berwenang.'); }
+                const html = await response.text();
+                if (gmArchive.previewUrl) URL.revokeObjectURL(gmArchive.previewUrl);
+                gmArchive.previewUrl = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+                document.getElementById('gm-archive-frame').src = gmArchive.previewUrl;
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('modalReportArchive')).show();
+                return true;
+            } catch (e) { Swal.fire('Dokumen belum dapat dibuka', e.message, 'error'); return false; }
+        }
+        async function gmArchiveApprove(a) { const answer = await Swal.fire({ title: 'Setujui laporan secara internal?', text: 'Pastikan Anda telah memeriksa salinan ' + a.number + '. Persetujuan dicatat atas nama akun Anda.', icon: 'question', showCancelButton: true, confirmButtonText: 'Setujui internal', cancelButtonText: 'Kembali' }); if (!answer.isConfirmed) return; try { await gmArchiveAPI({ action: 'approve', id: a.id }); await gmArchiveList(true); Swal.fire('Disetujui', 'Persetujuan internal sudah tercatat pada halaman verifikasi.', 'success'); } catch (e) { Swal.fire('Belum berhasil', e.message, 'error'); } }
+        async function gmArchiveRevoke(a) { const answer = await Swal.fire({ title: 'Batalkan penerbitan dokumen?', text: 'Arsip dipertahankan dan QR akan menampilkan status Dibatalkan.', input: 'textarea', inputLabel: 'Alasan pembatalan', showCancelButton: true, confirmButtonText: 'Batalkan dokumen', cancelButtonText: 'Kembali', inputValidator: v => !v.trim() ? 'Isi alasan pembatalan.' : v.length > 1000 ? 'Maksimal 1.000 karakter.' : undefined }); if (!answer.isConfirmed) return; try { await gmArchiveAPI({ action: 'revoke', id: a.id, reason: answer.value }); await gmArchiveList(true); } catch (e) { Swal.fire('Belum berhasil', e.message, 'error'); } }
+        async function gmArchiveHistory(a) { try { const res = await gmArchiveAPI({ action: 'get', id: a.id }); Swal.fire({ title: 'Riwayat ' + a.number, text: res.events.map(e => new Date(e.at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB · ' + e.actor_name + ' · ' + ({ published: 'Diterbitkan', approved: 'Disetujui internal', revoked: 'Dibatalkan' }[e.action] || e.action) + (e.detail ? ' · ' + e.detail : '')).join('\n') || 'Belum ada perubahan status.' }); } catch (e) { Swal.fire('Belum tersedia', e.message, 'error'); } }
+        document.addEventListener('DOMContentLoaded', () => { document.getElementById('gm-archive-publish')?.addEventListener('click', gmArchivePublish); document.getElementById('gm-archive-supervisor')?.addEventListener('change', generateReport); document.getElementById('gm-archive-refresh')?.addEventListener('click', () => gmArchiveList(true)); document.getElementById('modalReportArchive')?.addEventListener('hidden.bs.modal', () => { document.getElementById('gm-archive-frame').src = 'about:blank'; if (gmArchive.previewUrl) URL.revokeObjectURL(gmArchive.previewUrl); gmArchive.previewUrl = ''; }); setInterval(() => { const wanted = new URL(location.href).searchParams.get('arsip'); if (currentUser && /^[a-f0-9]{64}$/.test(wanted || '') && gmArchive.openedToken !== sessionToken + ':' + wanted) { gmArchive.openedToken = sessionToken + ':' + wanted; gmArchiveOpen(wanted); } if (currentUser?.role === 'Admin' && !document.hidden && !document.getElementById('tab-reports')?.classList.contains('d-none') && Date.now() - gmArchive.last >= 15000) gmArchiveList(); }, 1000); });
+
+        function gmStaffResize() { requestAnimationFrame(() => { if (typeof gmBcLayout === 'function') gmBcLayout(); if (window.luckysheet && typeof window.luckysheet.resize === 'function') { try { window.luckysheet.resize(); } catch { } } }); }
+        function gmStaffControlsRender() { const staff = currentUser?.role === 'Staf'; const fsBtn = document.getElementById('gm-staff-fullscreen'); if (fsBtn) fsBtn.hidden = !staff; const sttBtn = document.getElementById('btn-stt-fab'); if (sttBtn) sttBtn.hidden = !staff; try { gmStaffFullscreenState(); } catch(e){} }
+        function gmStaffFullscreenState() { const button = document.getElementById('gm-staff-fullscreen'); if (!button) return; const active = document.fullscreenElement === document.getElementById('page-app'); button.setAttribute('aria-pressed', String(active)); button.title = active ? 'Keluar layar penuh' : 'Layar penuh'; button.setAttribute('aria-label', button.title); button.querySelector('i').className = 'fas ' + (active ? 'fa-compress' : 'fa-expand'); }
+        async function gmStaffFullscreen() { if (currentUser?.role !== 'Staf') return; const root = document.getElementById('page-app'), button = document.getElementById('gm-staff-fullscreen'); button.disabled = true; try { if (document.fullscreenElement) await document.exitFullscreen(); else { if (!root.requestFullscreen) throw Error('Layar penuh belum didukung browser ini.'); await root.requestFullscreen(); } } catch (error) { Swal.fire('Layar penuh belum tersedia', error.message || 'Browser tidak mengizinkan layar penuh. Coba kembali melalui tombol ini.', 'info'); } finally { button.disabled = false; gmStaffFullscreenState(); gmStaffResize(); } }
+        document.addEventListener('DOMContentLoaded', () => { document.getElementById('gm-staff-fullscreen')?.addEventListener('click', gmStaffFullscreen); document.addEventListener('fullscreenchange', () => { gmStaffFullscreenState(); gmStaffResize(); }); window.addEventListener('resize', gmStaffResize); });
+
+        let gmBroadcast = { owner: '', state: null, offset: 0, confirmed: 0, busy: false, last: 0, retryAt: 0, failures: 0, unsupported: false, operation: false, draftId: '', draftPayload: '', revision: 0, historyRequest: 0, historyRows: [], actionError: '' };
+        const gmBcEl = id => document.getElementById(id);
+        function gmBcTime(at, full = false) { return at ? new Date(at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', ...(full ? { day: 'numeric', month: 'short', year: 'numeric' } : {}), hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB' : 'Belum tercatat'; }
+        function gmBcDate(now = Date.now() + gmBroadcast.offset) { return new Date(now).toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' }); }
+        function gmBcReset() { gmBroadcast.owner = sessionToken; gmBroadcast.state = null; gmBroadcast.confirmed = 0; gmBroadcast.last = 0; gmBroadcast.retryAt = 0; gmBroadcast.failures = 0; gmBroadcast.busy = false; gmBroadcast.operation = false; gmBroadcast.draftId = ''; gmBroadcast.draftPayload = ''; gmBroadcast.historyRequest++; gmBroadcast.historyRows = []; gmBroadcast.actionError = ''; gmBcEl('gm-broadcast-action-error').hidden = true; gmBroadcast.unsupported = false; gmBroadcast.revision++; gmBcEl('broadcast-running-bar').hidden = true; gmBcEl('attendance-running-bar').hidden = true; gmBcEl('gm-broadcast-upgrade')?.classList.add('d-none'); gmBcEl('gm-broadcast-history').replaceChildren(); gmBcEl('gm-staff-profile-grid').replaceChildren(); gmBcEl('gm-attendance-history-body').replaceChildren(); }
+        function gmBroadcastAccept(state, token = sessionToken) { if (!currentUser || !token || sessionToken !== token || state?.broadcast_version !== 1) return; if (gmBroadcast.owner !== token) gmBcReset(); if (gmBroadcast.state && Number(state.server_now) < Number(gmBroadcast.state.server_now)) return; gmBroadcast.state = state; gmBroadcast.offset = Number(state.server_now) - Date.now(); gmBroadcast.confirmed = Date.now(); gmBroadcast.last = Date.now(); gmBroadcast.unsupported = false; gmBroadcast.retryAt = 0; gmBroadcast.failures = 0; gmBcEl('gm-broadcast-upgrade')?.classList.add('d-none'); gmBcService('connected', 'Terhubung · Diperbarui ' + gmBcTime(state.server_now)); gmBcEl('gm-broadcast-connection').textContent = state.announcement ? 'Diperbarui ' + gmBcTime(state.server_now) : 'Belum ada pengumuman aktif. Tulis pesan dan klik Siarkan.'; try { localStorage.setItem('gm_broadcast_' + currentUser.user_id, JSON.stringify({ broadcast_version: state.broadcast_version, server_now: state.server_now, date: state.date, announcement: state.announcement, attendance: state.attendance, cache_at: Date.now() })); } catch { } gmBroadcastRender(); gmBroadcastRenderHistory(); gmDashboardProfiles(); }
+        async function gmBroadcastSync(force = false) { if (!currentUser || !IS_GAS || document.hidden) return; if (gmBroadcast.owner !== sessionToken) gmBcReset(); if (gmBroadcast.busy || gmBroadcast.operation || !force && (Date.now() < gmBroadcast.retryAt || Date.now() - gmBroadcast.last < 15000)) return; const token = sessionToken, revision = gmBroadcast.revision; gmBroadcast.busy = true; gmBroadcast.last = Date.now(); gmBcService('loading', gmBroadcast.state ? 'Memperbarui pengumuman dan absen…' : 'Menghubungkan pengumuman dan absen…'); try { const state = await gmRPCPromise('getLatestBroadcastGAS', [], token); if (state?.broadcast_version !== 1) throw Error('Versi API siaran belum cocok. Perbarui Code.gs dan deployment Versi baru.'); gmBroadcastAccept(state, token); } catch (e) { if (token !== sessionToken || revision !== gmBroadcast.revision) return; gmBroadcast.failures++; gmBroadcast.last = Date.now(); gmBroadcast.retryAt = Date.now() + Math.min(120000, 15000 * 2 ** Math.min(3, gmBroadcast.failures)); gmBroadcast.unsupported = /Fungsi API tidak diizinkan|is not a function|not found|Versi API siaran belum cocok/.test(e.message); gmBcEl('gm-broadcast-upgrade')?.classList.toggle('d-none', !gmBroadcast.unsupported); const message = gmBroadcast.unsupported ? 'Pengumuman dan absen menunggu Code.gs terbaru serta deployment Versi baru.' : 'Koneksi gagal · ' + e.message; gmBcEl('gm-broadcast-connection').textContent = message; gmBcService('error', message); } finally { if (token === sessionToken && revision === gmBroadcast.revision) { gmBroadcast.busy = false; gmBroadcastRender(); gmDashboardProfiles(); } } }
+        function gmBcLayout() { if (!currentUser) return; requestAnimationFrame(() => { const nav = document.querySelector('#page-app .navbar-custom'), stack = document.querySelector('.gm-broadcast-stack'); if (!nav || !stack) return; const height = Math.ceil(nav.getBoundingClientRect().height + stack.getBoundingClientRect().height), value = height + 'px'; if (height > 0 && document.documentElement.style.getPropertyValue('--gm-app-top') !== value) { document.documentElement.style.setProperty('--gm-app-top', value); if (typeof isLuckysheetLoaded !== 'undefined' && isLuckysheetLoaded && window.luckysheet && typeof window.luckysheet.resize === 'function') { try { window.luckysheet.resize(); } catch (error) { console.warn('GovMonitor: ukuran spreadsheet belum dapat diperbarui.', error.message); } } } }); }
+        function gmBroadcastRender() {
+            const state = gmBroadcast.state, now = Date.now() + gmBroadcast.offset, today = gmBcDate(now), fresh = !!state && Date.now() - gmBroadcast.confirmed < 70000 && state.date === today; const a = state?.announcement, active = !!a && a.status === 'Aktif' && a.expires_at > now && !a.acknowledged; const bar = gmBcEl('broadcast-running-bar'); bar.hidden = !active; if (active) { bar.dataset.category = a.category; gmBcText('gm-broadcast-marquee', a.category.toLocaleUpperCase('id-ID') + ' · ' + gmBcTime(a.created_at) + ' — ' + a.message, true); }
+            gmBcEl('gm-admin-file-dropdown').hidden = currentUser?.role !== 'Admin'; const staff = currentUser?.role === 'Staf', sameDay = state?.date === today, attendance = sameDay ? state.attendance : null; gmBcEl('attendance-running-bar').hidden = !(staff && sameDay && state.attendance_open && !attendance); if (staff && sameDay) { const dateLabel = new Date(now).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); gmBcText('gm-attendance-marquee', 'ABSEN HARIAN · ' + dateLabel + ' — Selamat pagi. Silakan catat kehadiran Anda sebelum mulai bekerja.', true); } gmBcEl('gm-attendance-submit').disabled = !fresh || gmBroadcast.operation; gmBcEl('gm-broadcast-ack').disabled = !fresh || gmBroadcast.operation; gmBcEl('gm-attendance-submit').textContent = gmBroadcast.operation ? 'Menyimpan…' : 'Absen saya Hari ini'; gmBcEl('gm-broadcast-ack').textContent = gmBroadcast.operation ? 'Menyimpan…' : 'Dimengerti'; gmBcEl('attendance-running-bar').setAttribute('aria-busy', String(gmBroadcast.operation)); gmBcEl('broadcast-running-bar').setAttribute('aria-busy', String(gmBroadcast.operation)); gmBcEl('gm-broadcast-publish').disabled = gmBroadcast.unsupported || gmBroadcast.operation || !fresh; gmBcLayout();
+        }
+        function gmBcText(id, text, always = false) {
+            const viewport = gmBcEl(id), track = viewport.firstElementChild, copy = track.firstElementChild, duplicate = track.lastElementChild;
+            const changed = viewport.dataset.message !== text;
+            if (changed) { viewport.dataset.message = text; if (always) { const emoji = document.createElement('span'), message = document.createElement('span'), tail = document.createElement('span'); emoji.className = tail.className = 'gm-broadcast-emoji'; emoji.textContent = tail.textContent = '📢 📢'; message.textContent = text; copy.replaceChildren(emoji, message, tail); } else copy.textContent = text; }
+            viewport.dataset.scroll = always ? 'true' : viewport.dataset.scroll;
+            requestAnimationFrame(() => {
+                if (always) {
+                    const width = Math.max(viewport.clientWidth, 1);
+                    // Repeat the complete announcement inside each half to fill wide banners.
+                    if (changed || viewport.dataset.width !== String(width)) {
+                        const emoji = document.createElement('span'), message = document.createElement('span'), tail = document.createElement('span'); emoji.className = tail.className = 'gm-broadcast-emoji'; emoji.textContent = tail.textContent = '📢 📢'; message.textContent = text; copy.replaceChildren(emoji, message, tail);
+                        const segment = [...copy.children].map(child => child.cloneNode(true)); let repeats = 1;
+                        while (copy.scrollWidth < width && repeats < 12) { for (const child of segment) copy.append(child.cloneNode(true)); repeats++; }
+                        duplicate.replaceChildren(...[...copy.children].map(child => child.cloneNode(true))); viewport.dataset.width = String(width);
+                    }
+                    track.style.setProperty('--gm-duration', Math.max(16, copy.scrollWidth / 45) + 's');
+                } else { if (changed) duplicate.textContent = text; viewport.dataset.scroll = String(copy.scrollWidth > viewport.clientWidth); track.style.setProperty('--gm-duration', Math.max(18, copy.scrollWidth / 40) + 's'); }
+            });
+        }
+        function gmBcService(status, message) { const line = gmBcEl('gm-broadcast-service'); line.dataset.state = status; line.hidden = status !== 'error'; gmBcEl('gm-broadcast-service-label').textContent = status === 'error' ? message : ''; gmBcEl('gm-broadcast-retry').hidden = status !== 'error'; }
+        async function gmBcAction(method, args, success) {
+            if (!currentUser || gmBroadcast.operation) return false;
+            gmBroadcast.operation = true; const token = sessionToken;
+            gmBroadcast.actionError = ''; gmBcEl('gm-broadcast-action-error').hidden = true; gmBroadcastRender();
+            try {
+                const result = await gmRPCPromise(method, args, token); if (token !== sessionToken) return false;
+                if (result?.success !== true || result.broadcast_version !== 1 || !Number.isFinite(Number(result.server_now))) throw Error('Server belum mengonfirmasi penyimpanan. Periksa riwayat, lalu coba lagi.');
+                if (method === 'recordDailyAttendanceGAS' && (!result.attendance || result.attendance.user_id !== currentUser.user_id || result.attendance.date !== result.date || !Number.isFinite(Number(result.attendance.at)))) throw Error('Catatan absen belum terkonfirmasi. Periksa riwayat, lalu coba lagi.');
+                if (method === 'acknowledgeBroadcastGAS' && result.announcement?.id === args[0] && !result.announcement.acknowledged) throw Error('Konfirmasi pengumuman belum tersimpan. Coba lagi.');
+                gmBroadcastAccept(result, token);
+                if (success) await Swal.fire(success, method === 'recordDailyAttendanceGAS' ? 'Tercatat ' + gmBcTime(result.attendance.at) + ' di Google Sheets.' : 'Catatan berhasil disimpan di Google Sheets.', 'success');
+                return true;
+            } catch (e) {
+                if (token === sessionToken) { gmBroadcast.actionError = e.message; const panel = gmBcEl('gm-broadcast-action-error'); panel.textContent = 'Penyimpanan belum terkonfirmasi · ' + e.message + ' Periksa riwayat atau tekan kembali tombol untuk mencoba lagi.'; panel.hidden = false; gmBcService('error', 'Penyimpanan belum terkonfirmasi. Periksa koneksi dan riwayat.'); }
+                return false;
+            } finally { if (token === sessionToken) { gmBroadcast.operation = false; gmBroadcastRender(); } }
+        }
+        async function gmBroadcastPublish(event) { event.preventDefault(); if (currentUser?.role !== 'Admin' || gmBroadcast.operation) return; const input = { id: 'BR-' + crypto.randomUUID(), category: gmBcEl('gm-broadcast-select').value, message: gmBcEl('gm-broadcast-message').value.trim(), hours: Number(gmBcEl('gm-broadcast-hours').value) }; if (!input.message) return; const signature = JSON.stringify([input.category, input.message, input.hours]); if (gmBroadcast.draftPayload !== signature) { gmBroadcast.draftId = input.id; gmBroadcast.draftPayload = signature; } input.id = gmBroadcast.draftId; const answer = await Swal.fire({ title: 'Siarkan pengumuman?', text: input.category + ' · ' + input.message, showCancelButton: true, confirmButtonText: 'Siarkan', cancelButtonText: 'Kembali' }); if (answer.isConfirmed && await gmBcAction('saveBroadcastAnnouncementGAS', [input], 'Pengumuman disiarkan')) { gmBcEl('gm-broadcast-message').value = ''; gmBroadcast.draftId = ''; gmBroadcast.draftPayload = ''; } gmBcPreview(); }
+        function gmBcPreview() { gmBcEl('gm-broadcast-preview').textContent = gmBcEl('gm-broadcast-select').value + ' — ' + (gmBcEl('gm-broadcast-message').value.trim() || 'Pratinjau pesan Anda'); }
+        function gmBroadcastRenderHistory() { if (currentUser?.role !== 'Admin' || !gmBroadcast.state) return; const root = gmBcEl('gm-broadcast-history'); root.replaceChildren(); for (const a of gmBroadcast.state.broadcasts || []) { const card = document.createElement('article'), title = document.createElement('strong'), text = document.createElement('p'), meta = document.createElement('div'); title.textContent = a.category + ' · ' + a.status; text.textContent = a.message; meta.className = 'gm-broadcast-meta'; meta.textContent = gmBcTime(a.created_at, true) + ' · ' + a.issuer_name + ' · ' + a.staff_acknowledged + ' dari ' + a.staff_total + ' staf dimengerti'; const actions = document.createElement('div'); actions.className = 'd-flex gap-2 flex-wrap mt-2'; const readers = document.createElement('button'); readers.type = 'button'; readers.className = 'btn btn-outline-secondary btn-sm'; readers.textContent = 'Lihat konfirmasi'; readers.addEventListener('click', () => Swal.fire({ title: 'Konfirmasi pengumuman', text: a.readers.map(r => r.nama + ' · ' + gmBcTime(r.at, true)).join('\n') || 'Belum ada konfirmasi.' })); actions.append(readers); if (a.status === 'Aktif') { const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'btn btn-outline-danger btn-sm'; cancel.textContent = 'Batalkan siaran'; cancel.addEventListener('click', async () => { const answer = await Swal.fire({ title: 'Batalkan siaran ini?', text: 'Riwayat siaran dan konfirmasinya tetap disimpan.', showCancelButton: true, confirmButtonText: 'Batalkan siaran', cancelButtonText: 'Kembali' }); if (answer.isConfirmed) gmBcAction('cancelBroadcastAnnouncementGAS', [a.id]); }); actions.append(cancel); } card.append(title, text, meta, actions); root.append(card); } if (!root.childElementCount) root.textContent = 'Belum ada siaran.'; }
+        function gmDashboardProfiles() { if (currentUser?.role !== 'Admin') return; const root = gmBcEl('gm-staff-profile-grid'), now = Date.now() + gmBroadcast.offset, state = gmBroadcast.state, attendance = state?.date === gmBcDate(now) && Date.now() - gmBroadcast.confirmed < 70000 ? state.today_attendance : null; const users = staffList.filter(u => u.role === 'Staf' && u.status === 'Aktif'); gmBcEl('gm-attendance-summary').textContent = attendance ? users.filter(u => attendance.some(a => a.user_id === u.user_id)).length + ' dari ' + users.length + ' staf sudah absen hari ini' : 'Absen hari ini belum dimuat'; const existing = new Map([...root.children].map(el => [el.dataset.userId, el])); if (!existing.size && users.length) root.replaceChildren(); for (const u of users) { let card = existing.get(u.user_id); if (!card) { card = document.createElement('article'); card.className = 'neon-hover-box'; card.dataset.userId = u.user_id; card.innerHTML = '<div class="gm-profile-top"><img class="gm-profile-photo" alt="Foto profil staf"><div><h6 class="gm-profile-name"></h6><span class="gm-presence"><span class="gm-presence-dot" aria-hidden="true"></span><span class="gm-profile-status"></span></span></div></div><p class="gm-profile-info gm-profile-role"></p><p class="gm-profile-info gm-profile-sheet"></p><p class="gm-profile-info gm-profile-last"></p><div class="gm-profile-attendance"></div><button type="button" class="btn btn-outline-primary btn-sm">Monitor</button>'; card.querySelector('button').addEventListener('click', () => gmOpenAdminWorksheet(u.user_id)); card.querySelector('img').addEventListener('error', e => { e.target.src = GM_LOGO; }); root.append(card); } existing.delete(u.user_id); const seen = Number(u.last_seen) || 0, online = u.online === true && now - seen < 70000, status = online ? (now - (Number(u.last_activity_at) || seen) >= 120000 ? 'idle' : 'online') : 'offline', label = { online: 'Online', idle: 'Idle · tidak aktif', offline: 'Offline' }[status]; card.dataset.presence = status; card.querySelector('.gm-presence').dataset.state = status; card.querySelector('.gm-profile-status').textContent = label; card.querySelector('.gm-profile-name').textContent = u.nama; card.querySelector('.gm-profile-role').textContent = u.jabatan || 'Staf'; const image = card.querySelector('img'), raw = String(u.foto || ''), src = /^https:\/\/|^data:image\/(png|jpeg|webp);base64,|^\/(photos\/|logo\.png)/.test(raw) ? raw : GM_LOGO; if (image.getAttribute('src') !== src) image.src = src; const names = u.worksheet_names || []; card.querySelector('.gm-profile-sheet').textContent = names.length ? 'Lembar kerja: ' + names.join(', ') : 'Lembar kerja: tersedia melalui Monitor'; const seconds = seen ? Math.max(0, Math.floor((now - seen) / 1000)) : 0, relative = seconds < 60 ? 'baru saja' : seconds < 3600 ? Math.floor(seconds / 60) + ' menit lalu' : seconds < 86400 ? Math.floor(seconds / 3600) + ' jam lalu' : Math.floor(seconds / 86400) + ' hari lalu'; card.querySelector('.gm-profile-last').textContent = seen ? 'Terakhir online: ' + gmBcTime(seen, true) + ' · ' + relative : 'Terakhir online: belum tercatat'; const entry = Array.isArray(attendance) ? attendance.find(a => a.user_id === u.user_id) : null; card.querySelector('.gm-profile-attendance').textContent = !attendance ? 'Absen hari ini: belum dimuat' : entry ? 'Sudah absen · ' + gmBcTime(entry.at) : 'Belum absen hari ini'; } for (const el of existing.values()) el.remove(); if (!users.length) root.textContent = 'Belum ada staf aktif.'; }
+        function gmAttendanceRenderRows() {
+            const root = gmBcEl('gm-attendance-history-body'), query = gmBcEl('gm-attendance-history-name').value.trim().toLocaleLowerCase('id-ID'); root.replaceChildren();
+            const rows = gmBroadcast.historyRows.filter(a => a.nama.toLocaleLowerCase('id-ID').includes(query));
+            for (const a of rows) { const row = document.createElement('tr'); for (const value of [a.nama, a.date, gmBcTime(a.at)]) { const cell = document.createElement('td'); cell.textContent = value; row.append(cell); } root.append(row); }
+            gmBcEl('gm-attendance-history-count').textContent = rows.length + ' catatan';
+            if (!rows.length) { const row = document.createElement('tr'), cell = document.createElement('td'); cell.colSpan = 3; cell.textContent = query ? 'Tidak ada nama yang cocok.' : 'Belum ada catatan absen pada tanggal ini.'; row.append(cell); root.append(row); }
+        }
+        async function gmAttendanceHistory(date) {
+            if (!currentUser) return; const token = sessionToken, ticket = ++gmBroadcast.historyRequest, root = gmBcEl('gm-attendance-history-body'); gmBroadcast.historyRows = []; gmBcEl('gm-attendance-history-count').textContent = ''; root.replaceChildren();
+            const pending = document.createElement('tr'), td = document.createElement('td'); td.colSpan = 3; td.textContent = 'Memuat riwayat…'; pending.append(td); root.append(pending);
+            try { const res = await gmRPCPromise('getDailyAttendanceHistoryGAS', [date], token); if (sessionToken !== token || ticket !== gmBroadcast.historyRequest) return; if (res?.success !== true || !Array.isArray(res.attendance)) throw Error('Riwayat belum dapat dikonfirmasi.'); gmBroadcast.historyRows = res.attendance; gmAttendanceRenderRows(); }
+            catch (e) { if (token === sessionToken && ticket === gmBroadcast.historyRequest) td.textContent = 'Riwayat belum dimuat: ' + e.message; }
+        }
+        function gmAttendanceOpen() { if (!currentUser) return; gmBcEl('gm-attendance-history-name').value = ''; gmBcEl('gm-attendance-history-date').value = gmBroadcast.state?.date || gmBcDate(); bootstrap.Modal.getOrCreateInstance(gmBcEl('modalAttendanceHistory')).show(); gmAttendanceHistory(gmBcEl('gm-attendance-history-date').value); }
+        document.addEventListener('DOMContentLoaded', () => { gmBcEl('gm-broadcast-retry')?.addEventListener('click', () => gmBroadcastSync(true)); gmBcEl('gm-attendance-history-name')?.addEventListener('input', gmAttendanceRenderRows); gmBcEl('gm-broadcast-form')?.addEventListener('submit', gmBroadcastPublish); for (const id of ['gm-broadcast-message', 'gm-broadcast-select']) gmBcEl(id)?.addEventListener('input', gmBcPreview); gmBcEl('gm-broadcast-ack')?.addEventListener('click', () => { const a = gmBroadcast.state?.announcement; if (a) gmBcAction('acknowledgeBroadcastGAS', [a.id]); }); gmBcEl('gm-attendance-submit')?.addEventListener('click', () => gmBcAction('recordDailyAttendanceGAS', [], 'Absen hari ini tercatat')); for (const id of ['gm-attendance-history-open', 'gm-attendance-admin-history']) gmBcEl(id)?.addEventListener('click', gmAttendanceOpen); gmBcEl('gm-attendance-history-date')?.addEventListener('change', e => gmAttendanceHistory(e.target.value)); gmBcEl('gm-broadcast-refresh')?.addEventListener('click', () => gmBroadcastSync(true)); document.querySelectorAll('.gm-marquee').forEach(el => el.addEventListener('pointerdown', () => el.classList.toggle('gm-paused'))); window.addEventListener('resize', gmBroadcastRender); window.addEventListener('online', () => gmBroadcastSync(true)); document.addEventListener('visibilitychange', () => { if (!document.hidden) gmBroadcastSync(true); }); window.addEventListener('storage', e => { if (currentUser && e.key === 'gm_broadcast_' + currentUser.user_id) gmBroadcastSync(true); }); setInterval(() => { if (!currentUser) { if (gmBroadcast.owner) gmBcReset(); return; } if (gmBroadcast.owner !== sessionToken) { gmBcReset(); gmBroadcastSync(true); } gmBroadcastRender(); if (!document.hidden && currentUser.role === 'Admin') gmDashboardProfiles(); if (Date.now() - gmBroadcast.last >= 15000) gmBroadcastSync(); }, 1000); gmBcPreview(); });
+
+        $(document).ready(function () {
+            initWebSpeechAPI();
+            if (!IS_GAS) { initAuditLogsStore(); fetchUsersFromGAS(); }
+            else { staffList = []; auditLogsData = []; mockChatStore = {}; }
+            if (!IS_GAS) document.querySelector('.login-side-form').insertAdjacentHTML('afterbegin', '<div class="alert alert-warning small">PRATINJAU DEMO — data contoh, belum terhubung penyimpanan GovMonitor.</div>');
+
+            if (IS_GAS) {
+                const saved = sessionStorage.getItem('govmonitor_session') || localStorage.getItem('govmonitor_session');
+                try {
+                    const session = JSON.parse(saved || 'null');
+                    if (session?.token && session.expires > Date.now()) {
+                        sessionToken = session.token;
+                        gasRun().withSuccessHandler(res => afterLogin(res.user, res)).withFailureHandler(() => { sessionToken = ''; localStorage.removeItem('govmonitor_session'); sessionStorage.removeItem('govmonitor_session'); }).validateSession();
+                    } else { localStorage.removeItem('govmonitor_session'); sessionStorage.removeItem('govmonitor_session'); }
+                } catch (e) { localStorage.removeItem('govmonitor_session'); sessionStorage.removeItem('govmonitor_session'); }
+            }
+
+            updateLocalSyncBadge();
+            initPrayerWidget();
+            handlePeriodChange('MONTH');
+            
+            // Drag & Drop pada Excel Dropzone
+            const dropzone = document.getElementById('excel-dropzone');
+            if (dropzone) {
+                dropzone.addEventListener('click', function (e) {
+                    if (!e.target.closest('button') && !e.target.closest('#selected-file-info')) {
+                        document.getElementById('input-file-xlsx').click();
+                    }
+                });
+                ['dragenter', 'dragover'].forEach(eventName => {
+                    dropzone.addEventListener(eventName, e => { e.preventDefault(); dropzone.style.background = '#e6fffa'; dropzone.style.borderColor = '#0d9488'; }, false);
+                });
+                ['dragleave', 'drop'].forEach(eventName => {
+                    dropzone.addEventListener(eventName, e => { e.preventDefault(); dropzone.style.background = '#f8fafc'; dropzone.style.borderColor = '#0f766e'; }, false);
+                });
+                dropzone.addEventListener('drop', e => {
+                    const dt = e.dataTransfer;
+                    if (dt && dt.files && dt.files.length) {
+                        window.handleSelectedXlsxFile(dt.files[0]);
+                    }
+                }, false);
+            }
+
+            // Keyboard Shortcuts: Ctrl+O (Impor) & Ctrl+S (Simpan)
+            window.addEventListener('keydown', function(e) {
+                if ((e.ctrlKey || e.metaKey) && (e.key === 'o' || e.key === 'O' || e.keyCode === 79)) {
+                    if (!$('#page-login').is(':visible')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openImportExcelModal(e);
+                    }
+                } else if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.keyCode === 83)) {
+                    if (!$('#page-login').is(':visible')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (typeof window.syncNowWithGAS === 'function') {
+                            window.syncNowWithGAS();
+                        }
+                    }
+                }
+            }, true);
+    
+            window.GM_APP_LOADED = true;
+            const loadErrEl = document.getElementById('gm-load-error');
+            if (loadErrEl) loadErrEl.style.display = 'none';
+
+            $(window).on('resize', function () {
+                if (isLuckysheetLoaded && typeof luckysheet !== 'undefined' && luckysheet.resize) {
+                    try { luckysheet.resize(); } catch (e) { }
+                }
+            });
+
+            $(document).on('keydown', function (e) {
+                if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+                    e.preventDefault();
+                    toggleSpeechRecognition();
+                }
+            });
+        });
+</script>

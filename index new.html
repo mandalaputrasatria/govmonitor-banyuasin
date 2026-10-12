@@ -1,0 +1,1702 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/png" sizes="32x32"
+        href="https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" sizes="32x32"
+        href="https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg">
+    <link rel="apple-touch-icon"
+        href="https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg">
+    <title>GovMonitor - Pemkab Banyuasin</title>
+
+    <!-- PWA Web App Manifest -->
+    <link rel="manifest"
+        href="data:application/manifest+json;utf8,%7B%22name%22%3A%22Government%20Staff%20Output%20%26%20Input%20Monitoring%22%2C%22short_name%22%3A%22GovMonitor%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23f4f4f5%22%2C%22theme_color%22%3A%22%230f766e%22%7D">
+    <meta name="theme-color" content="#0f766e">
+    <meta name="description"
+        content="GovMonitor Pemkab Banyuasin — lembar kerja staf, dikte suara, pemantauan dan laporan.">
+
+    <!-- Fonts & CSS Libraries -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+
+    <!-- JavaScript Core Libraries -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
+    <!-- SheetJS for .xlsx Exports -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luckyexcel/dist/luckyexcel.umd.js"></script>
+
+    <!-- Tailwind CSS CDN for e-Kinerja Official Report Styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Luckysheet CDN Dependencies -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/css/pluginsCss.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/plugins.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/css/luckysheet.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/assets/iconfont/iconfont.css">
+    <script src="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/js/plugin.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/luckysheet.umd.js"></script>
+    <!-- Modular Stylesheet GovMonitor Diskoperindag Banyuasin -->
+    <?!= include('Stylesheet'); ?>
+    <!-- Core Runtime Bridge, $ Guard, & Smart Error Boundary -->
+    <?!= include('Javascript_Core'); ?>
+</head>
+
+<body class="theme-banyuasin">
+    <!-- Boot Data & Logo Data -->
+    <div id="gm-logo-data" style="display:none">https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg</div>
+    <div id="gm-boot-data" style="display:none">{"success":true,"role":"Staf","user_id":"USR-002","nama":"Ahmad Fauzi, S.E.","monitoring_version":2,"mode":"app"}</div>
+
+    <!-- Error Banner Global -->
+    <div id="gm-load-error" class="alert alert-danger m-3 fw-bold" style="display:none;position:fixed;top:10px;left:10px;right:10px;z-index:999999;box-shadow:0 8px 30px rgba(0,0,0,0.3);border-radius:12px;"></div>
+
+<div id="page-login" class="login-wrapper animate__animated animate__fadeIn">
+        <div class="login-side-image">
+            <div class="mb-4 gm-logo-float">
+                <span class="gm-logo-halo" aria-hidden="true"></span><img class="gm-login-logo" data-gm-logo
+                    src="https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg"
+                    onerror="if(typeof GM_LOGO!=='undefined')this.src=GM_LOGO" alt="Logo Banyuasin" width="220"
+                    height="250" style="object-fit:contain">
+            </div>
+            <h1 class="gm-login-title fw-bold mb-2">GovMonitor</h1>
+            <p class="gm-login-agency">Diskoperindag Banyuasin.</p>
+            <p class="fs-5 opacity-75">Pemerintah Kabupaten Banyuasin</p>
+            <p class="mt-4 small opacity-50" style="max-width: 400px;">Sistem pemantauan input dan output kerja staf
+                secara berkala terintegrasi dengan Google Workspace.</p>
+        </div>
+        <div class="login-side-form">
+            <div class="gm-login-mobile-brand">
+                <div class="gm-logo-float"><span class="gm-logo-halo" aria-hidden="true"></span><img
+                        class="gm-login-logo" data-gm-logo
+                        src="https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg"
+                        onerror="if(typeof GM_LOGO!=='undefined')this.src=GM_LOGO" alt="Logo Banyuasin" width="160"
+                        height="180" style="object-fit:contain"></div>
+                <h1 class="gm-login-title">GovMonitor</h1>
+                <p class="gm-login-agency">Diskoperindag Banyuasin.</p>
+            </div>
+            <div class="mb-4">
+                <h3 class="fw-bold text-dark mb-1">Selamat Datang 👋</h3>
+                <p class="text-muted small">Silakan masuk ke akun GovMonitor Anda.</p>
+            </div>
+
+            <div id="gm-login-error" class="alert alert-danger d-none small" role="alert"></div>
+            <form id="form-login" onsubmit="window.handleLogin(event)">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold text-secondary small">ID Pengguna / Username</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0"><i
+                                class="fas fa-user text-muted"></i></span>
+                        <input type="text" id="login-username"
+                            class="form-control form-control-lg border-start-0 bg-light" placeholder="Masukkan username"
+                            required autocomplete="username">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold text-secondary small">Kata Sandi</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0"><i
+                                class="fas fa-lock text-muted"></i></span>
+                        <input type="password" id="login-password"
+                            class="form-control form-control-lg border-start-0 bg-light" placeholder="••••••••" required
+                            autocomplete="current-password">
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="rememberMe" checked>
+                        <label class="form-check-label text-muted small" for="rememberMe">Ingat sesi saya</label>
+                    </div>
+
+                </div>
+
+                <button type="submit" id="btn-login-submit"
+                    class="btn btn-brand btn-lg w-100 rounded-3 fw-bold mb-3 shadow-sm">
+                    <span id="login-btn-text">Masuk Aplikasi</span>
+                    <span id="login-btn-spinner" class="spinner-border spinner-border-sm ms-2 d-none"
+                        role="status"></span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div id="page-app" class="d-none">
+        <nav class="navbar navbar-expand navbar-dark navbar-custom px-3 py-2">
+            <div class="d-flex align-items-center gap-3 me-auto gp-header-group" style="overflow:visible;min-width:0">
+                <a class="navbar-brand d-flex align-items-center gap-2 fw-bold" href="#">
+                    <div class="bg-white rounded p-1">
+                        <img data-gm-logo
+                            src="https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg"
+                            onerror="if(typeof GM_LOGO!=='undefined')this.src=GM_LOGO" width="28" height="28"
+                            style="object-fit:contain" alt="Logo Banyuasin">
+                    </div>
+                    <span class="gm-brand-copy"><span class="gm-brand-title">GovMonitor</span><span
+                            class="gm-brand-agency">Diskoperindag Banyuasin</span></span>
+                </a>
+
+                <div class="dropdown" id="gw-dropdown">
+                    <button class="gw-trigger" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside"
+                        aria-expanded="false" aria-label="Buka jam, cuaca, dan kualitas udara">
+                        <i class="far fa-clock" aria-hidden="true"></i><span class="gw-clock-copy"><span
+                                class="gw-clock-main"><span id="gw-time">--:--:--</span><span
+                                    id="gw-zone">WIB</span></span><span id="gw-date">—</span><span
+                                class="gw-header-environment"><span><i id="gw-header-weather-icon" class="fas fa-cloud"
+                                        aria-hidden="true"></i> <span id="gw-header-weather">Memuat
+                                        cuaca…</span></span><span><i class="fas fa-wind" aria-hidden="true"></i> <span
+                                        id="gw-header-air">AQI —</span></span></span></span><i
+                            class="fas fa-chevron-down" aria-hidden="true"></i>
+                    </button>
+                    <div class="dropdown-menu gw-menu">
+                        <div class="gw-heading"><strong>Cuaca & Udara</strong><button type="button" id="gw-refresh"
+                                aria-label="Perbarui cuaca dan udara"><i class="fas fa-rotate" aria-hidden="true"></i>
+                                Perbarui</button></div>
+                        <small id="gw-full-date">—</small>
+                        <div class="gw-controls"><select id="gw-location" aria-label="Wilayah cuaca">
+                                <option value="banyuasin">Banyuasin</option>
+                                <option value="palembang">Palembang</option>
+                                <option value="lahat">Lahat</option>
+                                <option value="custom" disabled>Lokasi saya</option>
+                            </select><button type="button" id="gw-geolocate" aria-label="Gunakan lokasi perangkat"><i
+                                    class="fas fa-location-crosshairs" aria-hidden="true"></i> Lokasi saya</button>
+                        </div>
+                        <div class="gw-weather"><i id="gw-weather-icon" class="fas fa-cloud" aria-hidden="true"></i>
+                            <div><small id="gw-weather-location">Banyuasin</small><strong
+                                    id="gw-temperature">—</strong><span id="gw-condition">Memuat cuaca</span></div>
+                        </div>
+                        <div class="gw-grid">
+                            <div><small>Terasa seperti</small><strong id="gw-feels">—</strong></div>
+                            <div><small>Minimum / maksimum hari ini</small><strong id="gw-range">—</strong></div>
+                            <div><small>Peluang hujan hari ini</small><strong id="gw-rain">—</strong></div>
+                            <div><small>Kelembapan</small><strong id="gw-humidity">—</strong></div>
+                            <div><small>Kecepatan angin</small><strong id="gw-wind">—</strong></div>
+                            <div><small>Wilayah</small><strong id="gw-location-name">Banyuasin</strong></div>
+                        </div>
+                        <small class="gw-update" id="gw-weather-updated">Belum diperbarui</small>
+                        <div class="gw-air mt-3" id="gw-air-card" data-band="unknown">
+                            <div class="gw-air-top"><span>Kualitas udara · US AQI</span><strong id="gw-aqi">—</strong>
+                            </div>
+                            <p id="gw-air-label">Belum tersedia</p><small>PM2.5: <span id="gw-pm">—</span></small><small
+                                class="gw-update" id="gw-air-updated">Belum diperbarui</small><small
+                                class="d-block mt-2">Estimasi model CAMS, bukan pengukuran sensor di kantor.</small>
+                        </div>
+                        <div class="gw-footer">
+                            <div class="gw-options"><label><input type="checkbox" id="gw-seconds" checked> Tampilkan
+                                    detik</label><label><input type="checkbox" id="gw-hour12"> Format 12 jam</label>
+                            </div>
+                            <p id="gw-status" class="gw-status" role="status" aria-live="polite">Klik Perbarui untuk
+                                memuat informasi.</p><small class="gw-attribution">Sumber: <a
+                                    href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · <a
+                                    href="https://atmosphere.copernicus.eu/" target="_blank"
+                                    rel="noopener">CAMS</a><br>Cuaca diperiksa tiap 15 menit · udara tiap 60
+                                menit.</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="gm-staff-tool-stack">
+                    <div class="dropdown gp-dropdown ms-md-2">
+                        <button type="button" id="prayer-widget-container" class="gp-trigger" data-bs-toggle="dropdown"
+                            data-bs-auto-close="outside" aria-expanded="false"
+                            aria-label="Buka jadwal salat dan pengaturan azan">
+                            <span class="gp-mosque"><i class="fas fa-mosque"></i></span>
+                            <span class="gp-trigger-copy"><small id="prayer-city-label">Banyuasin</small><strong
+                                    id="prayer-next-name">Memuat jadwal</strong></span>
+                            <span id="prayer-countdown" class="gp-countdown">--:--:--</span><i
+                                class="fas fa-chevron-down gp-chevron"></i>
+                        </button>
+                        <div class="dropdown-menu gp-menu">
+                            <div class="gp-heading">
+                                <div><strong>GovAzan</strong><small>Jadwal salat & rekaman muazin</small></div><span
+                                    id="gp-zone-label">WIB</span>
+                            </div>
+                            <div class="gp-clock"><span id="digital-clock-time">--:--:--</span><small
+                                    id="digital-clock-date">—</small></div>
+                            <label class="gp-label" for="gp-location">LOKASI JADWAL</label>
+                            <select id="gp-location" class="gp-input" onchange="window.gpChangeLocation()">
+                                <optgroup label="Sumatera Selatan">
+                                    <option value="banyuasin">Kab. Banyuasin · Pangkalan Balai</option>
+                                    <option value="palembang">Kota Palembang</option>
+                                    <option value="lahat">Kab. Lahat · pusat kota</option>
+                                    <option value="pagaralam">Kota Pagar Alam</option>
+                                </optgroup>
+                                <optgroup label="Lokasi lainnya">
+                                    <option value="jakarta">Jakarta</option>
+                                    <option value="makassar">Makassar</option>
+                                    <option value="jayapura">Jayapura</option>
+                                </optgroup>
+                            </select>
+                            <div class="gp-date-row"><select id="gp-day" class="gp-input"
+                                    aria-label="Pilihan hari jadwal" onchange="window.gpChangeDay()">
+                                    <option value="today">Hari ini</option>
+                                    <option value="tomorrow">Besok</option>
+                                    <option value="custom">Pilih tanggal</option>
+                                </select><input id="gp-date" type="date" class="gp-input" aria-label="Tanggal jadwal"
+                                    onchange="window.gpChangeDate()"></div>
+                            <div id="gp-schedule" class="gp-schedule" aria-live="polite">
+                                <p class="gp-muted">Jadwal dimuat setelah login.</p>
+                            </div>
+                            <button type="button" class="gp-save" onclick="window.gpRefreshSchedules()">Perbarui
+                                jadwal</button>
+                            <div id="gp-schedule-source" class="gp-source">Perhitungan Aladhan, metode Kemenag (20).
+                            </div>
+                            <div class="gp-source">Audio otomatis mengikuti hari ini, meskipun Anda melihat tanggal
+                                lain.</div>
+                            <button type="button" class="gp-activate" id="gp-activate"
+                                onclick="window.gpActivateAudio()"><i class="fas fa-volume-high me-2"></i>Aktifkan Azan
+                                Otomatis</button>
+                            <audio id="gp-native-audio" controls preload="none"
+                                style="width:100%;height:34px;margin-top:8px" aria-label="Pemutar rekaman azan"></audio>
+                            <div id="gp-audio-status" class="gp-audio-status" role="status">Audio belum diaktifkan pada
+                                sesi ini.</div>
+                            <div class="gp-audio-controls"><label for="gp-volume"><i
+                                        class="fas fa-volume-low"></i><input type="range" id="gp-volume" min="0"
+                                        max="100" value="70" oninput="window.gpChangeVolume()"
+                                        aria-label="Volume azan"><span id="gp-volume-value">70%</span></label><button
+                                    type="button" id="gp-mute" onclick="window.toggleAzanMute()"
+                                    title="Senyapkan hari ini"><i class="fas fa-bell-slash"></i></button><button
+                                    type="button" onclick="window.gpStopAudio()" title="Hentikan audio"><i
+                                        class="fas fa-stop"></i></button></div>
+                            <div class="gp-test-buttons"><button type="button"
+                                    onclick="window.testAzanAudio('standard')"><i class="fas fa-play me-1"></i>Uji
+                                    standar</button><button type="button" onclick="window.testAzanAudio('subuh')"><i
+                                        class="fas fa-play me-1"></i>Uji Subuh</button></div>
+                            <details class="gp-settings">
+                                <summary>Pilihan rekaman & koordinat</summary>
+                                <label class="gp-label" for="gp-recording">REKAMAN MUAZIN</label><select
+                                    id="gp-recording" class="gp-input" onchange="window.gpRecordingChanged()">
+                                    <option value="doha">Rekaman Doha · pilihan awal</option>
+                                    <option value="custom">URL audio milik sendiri</option>
+                                </select>
+                                <div id="gp-custom-audio" class="d-none"><label class="gp-label"
+                                        for="gp-standard-url">URL HTTPS AZAN STANDAR</label><input id="gp-standard-url"
+                                        type="url" class="gp-input" placeholder="https://.../azan-standar.mp3"><label
+                                        class="gp-label" for="gp-subuh-url">URL HTTPS AZAN SUBUH</label><input
+                                        id="gp-subuh-url" type="url" class="gp-input"
+                                        placeholder="https://.../azan-subuh.mp3"></div>
+                                <div class="gp-coordinate-row"><label>Lintang<input id="gp-latitude" type="number"
+                                            step="0.0001" class="gp-input"></label><label>Bujur<input id="gp-longitude"
+                                            type="number" step="0.0001" class="gp-input"></label></div>
+                                <button type="button" class="gp-save" onclick="window.gpSaveSettings()">Simpan
+                                    pengaturan perangkat ini</button>
+                                <p class="gp-source">Koordinat awal mewakili pusat lokasi. Sesuaikan dengan lokasi
+                                    kantor Anda.</p>
+                                <a class="gp-credit" href="https://archive.org/details/adhan.recordings.from.doha.qatar"
+                                    target="_blank" rel="noopener">Sumber rekaman Doha · Public Domain Mark</a>
+                            </details>
+                            <div id="gp-message" class="gp-message" role="status" aria-live="polite">Aktifkan audio
+                                setelah login dan biarkan halaman terbuka.</div>
+                            <button type="button" id="gp-manual-play" class="gp-save d-none"
+                                onclick="window.gpPlayPending()">Putar azan sekarang</button>
+                        </div>
+                    </div><button id="btn-stt-fab" type="button" class="gm-staff-dikte"
+                        onclick="window.openDiktePanel()" title="Dikte Suara (Ctrl+Shift+D)"
+                        aria-controls="gov-dikte-panel" hidden><i class="fas fa-microphone" id="stt-icon"
+                            aria-hidden="true"></i><span>Dikte Suara</span></button>
+                </div>
+            </div>
+
+            <!-- PERBAIKAN WADAH NEON BOX HEADER UTAMA APLIKASI -->
+            <div class="mx-2 d-flex align-items-center gap-2">
+                <div id="nav-role-badge" class="gemini-box">
+                    <div class="gemini-content">
+                        <img src="https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg"
+                            width="22" height="22" style="object-fit:contain" alt="Logo mode staf">
+                        <span class="gemini-text">Mode Staf Kerja</span>
+                    </div>
+                </div>
+                <span id="nav-status-indicator"
+                    class="badge sync-badge-online px-2 py-1 text-dark d-none d-xl-inline-block extra-small">
+                    <span id="status-sync-text">Lokal: Tersimpan</span>
+                </span>
+            </div>
+
+            <div class="d-flex align-items-center gap-2 ms-auto">
+                <div id="staff-backup-btn-group" class="d-none d-flex gap-1">
+                    <button onclick="window.openStaffMyAuditModal()"
+                        class="btn btn-outline-light btn-sm fw-semibold shadow-sm px-2 py-1 extra-small"
+                        title="Lihat Riwayat Audit Input Saya">
+                        <i class="fas fa-list-check me-1 text-warning"></i> <span class="d-none d-md-inline">Log
+                            Saya</span>
+                    </button>
+                    <button onclick="window.openGovLensModal()"
+                        class="btn btn-info btn-sm fw-bold text-white shadow-sm px-2 py-1 extra-small"
+                        title="Pindai Dokumen dengan AI Gemini">
+                        <i class="fas fa-camera me-1"></i> <span class="d-none d-md-inline">GovLens OCR</span>
+                    </button>
+                    <button onclick="window.syncNowWithGAS()"
+                        class="btn btn-warning btn-sm fw-bold shadow-sm px-2 py-1 extra-small text-dark"
+                        title="Sinkronkan Spreadsheet ke penyimpanan GovMonitor">
+                        <i class="fas fa-arrows-rotate me-1" id="sync-icon-spin"></i> <span
+                            class="d-none d-md-inline">Sinkronkan Data</span>
+                    </button>
+                    <!-- GOOGLE SHEETS MENUBAR LENGKAP -->
+                    <div class="gm-gsheets-menubar d-flex align-items-center gap-1 bg-white bg-opacity-10 rounded-pill px-2 py-1 border border-white border-opacity-25">
+                        <!-- Menu File -->
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-link text-white text-decoration-none dropdown-toggle py-0 px-2 fw-semibold" type="button" data-bs-toggle="dropdown">
+                                File
+                            </button>
+                            <ul class="dropdown-menu shadow-lg border-0 rounded-3 mt-1">
+                                <li><a class="dropdown-item py-2 small fw-semibold" href="#" onclick="window.openImportExcelModal(); return false;">
+                                    <i class="fas fa-file-import text-success me-2"></i>Impor (.xlsx)... <span class="badge bg-light text-dark ms-2 border">Ctrl+O</span>
+                                </a></li>
+                                <li><a class="dropdown-item py-2 small fw-semibold" href="#" onclick="window.syncNowWithGAS(); return false;">
+                                    <i class="fas fa-cloud-arrow-up text-primary me-2"></i>Simpan ke Drive <span class="badge bg-light text-dark ms-2 border">Ctrl+S</span>
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item py-2 small" href="#" onclick="window.exportToXlsx(); return false;">
+                                    <i class="fas fa-file-excel text-success me-2"></i>Download Excel (.xlsx)
+                                </a></li>
+                                <li><a class="dropdown-item py-2 small" href="#" onclick="window.exportToJson(); return false;">
+                                    <i class="fas fa-download text-info me-2"></i>Download Backup JSON (.json)
+                                </a></li>
+                                <li><a class="dropdown-item py-2 small" href="#" onclick="$('#input-import-json').click(); return false;">
+                                    <i class="fas fa-upload text-warning me-2"></i>Pulihkan dari Backup JSON
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><button id="gm-attendance-history-open" class="dropdown-item py-2 small" type="button">
+                                    <i class="fas fa-calendar-check text-success me-2"></i>Riwayat Absen Harian
+                                </button></li>
+                            </ul>
+                        </div>
+
+                        <!-- Menu Edit -->
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-link text-white text-decoration-none dropdown-toggle py-0 px-2" type="button" data-bs-toggle="dropdown">
+                                Edit
+                            </button>
+                            <ul class="dropdown-menu shadow-lg border-0 rounded-3 mt-1">
+                                <li><a class="dropdown-item py-2 small" href="#" onclick="if(typeof luckysheet!=='undefined'&&luckysheet.undo)luckysheet.undo(); return false;">
+                                    <i class="fas fa-rotate-left me-2 text-secondary"></i>Urungkan (Undo) <span class="badge bg-light text-dark ms-2 border">Ctrl+Z</span>
+                                </a></li>
+                                <li><a class="dropdown-item py-2 small" href="#" onclick="if(typeof luckysheet!=='undefined'&&luckysheet.redo)luckysheet.redo(); return false;">
+                                    <i class="fas fa-rotate-right me-2 text-secondary"></i>Ulangi (Redo) <span class="badge bg-light text-dark ms-2 border">Ctrl+Y</span>
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item py-2 small text-danger" href="#" onclick="window.clearSelectedCells(); return false;">
+                                    <i class="fas fa-eraser me-2"></i>Hapus Isi Sel
+                                </a></li>
+                            </ul>
+                        </div>
+
+                        <!-- Menu Sisipkan -->
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-link text-white text-decoration-none dropdown-toggle py-0 px-2" type="button" data-bs-toggle="dropdown">
+                                Sisipkan
+                            </button>
+                            <ul class="dropdown-menu shadow-lg border-0 rounded-3 mt-1">
+                                <li><a class="dropdown-item py-2 small" href="#" onclick="if(typeof luckysheet!=='undefined'&&luckysheet.insertRow)luckysheet.insertRow(); return false;">
+                                    <i class="fas fa-arrows-up-down me-2 text-primary"></i>Baris di atas
+                                </a></li>
+                                <li><a class="dropdown-item py-2 small" href="#" onclick="if(typeof luckysheet!=='undefined'&&luckysheet.insertColumn)luckysheet.insertColumn(); return false;">
+                                    <i class="fas fa-arrows-left-right me-2 text-primary"></i>Kolom di kiri
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item py-2 small" href="#" onclick="if(typeof luckysheet!=='undefined'&&luckysheet.setSheetAdd)luckysheet.setSheetAdd(); return false;">
+                                    <i class="fas fa-plus me-2 text-success"></i>Lembar kerja baru
+                                </a></li>
+                            </ul>
+                        </div>
+
+                        <!-- Menu Alat -->
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-link text-white text-decoration-none dropdown-toggle py-0 px-2" type="button" data-bs-toggle="dropdown">
+                                Alat
+                            </button>
+                            <ul class="dropdown-menu shadow-lg border-0 rounded-3 mt-1">
+                                <li><a class="dropdown-item py-2 small" href="#" onclick="window.toggleSpeechRecognition(); return false;">
+                                    <i class="fas fa-microphone text-danger me-2"></i>Dikte Suara (Ctrl+Shift+D)
+                                </a></li>
+                                <li><a class="dropdown-item py-2 small" href="#" onclick="window.openGovLensModal(); return false;">
+                                    <i class="fas fa-camera text-info me-2"></i>GovLens OCR AI
+                                </a></li>
+                                <li><a class="dropdown-item py-2 small" href="#" onclick="window.openStaffMyAuditModal(); return false;">
+                                    <i class="fas fa-list-check text-warning me-2"></i>Log Audit Input Saya
+                                </a></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <input type="file" id="input-import-json" class="d-none" accept=".json"
+                        onchange="window.importFromJson(event)">
+                </div>
+
+                <div id="gm-admin-file-dropdown" class="dropdown" hidden><button
+                        class="btn btn-outline-light btn-sm dropdown-toggle rounded-pill px-3" type="button"
+                        data-bs-toggle="dropdown" aria-expanded="false">File</button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow">
+                        <li><button id="gm-attendance-admin-history" class="dropdown-item" type="button"><i
+                                    class="fas fa-calendar-check me-2 text-success" aria-hidden="true"></i>Riwayat
+                                Absen</button></li>
+                    </ul>
+                </div>
+                <button id="nav-theme-toggle-btn" type="button" onclick="window.openThemeModal()"
+                    class="btn btn-light btn-sm rounded-circle position-relative p-2 shadow-sm"
+                    style="width: 38px; height: 38px;" title="Pilih Tema Tampilan (Dark Mode)" aria-label="Ganti Tema">
+                    <i class="fas fa-palette text-dark fs-6" id="nav-theme-btn-icon"></i>
+                </button>
+                <button id="nav-chat-notif-btn" onclick="window.openAdminChatListModal()"
+                    class="btn btn-light btn-sm rounded-circle position-relative p-2 d-none"
+                    style="width: 38px; height: 38px;" title="Pesan Masuk Admin">
+                    <i class="fas fa-comment-dots text-dark fs-5"></i>
+                    <span id="nav-chat-unread-badge"
+                        class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">0</span>
+                </button>
+
+                <div class="d-flex align-items-center gap-2 ms-2 ps-2 border-start border-light border-opacity-25">
+                    <div class="text-end text-white d-none d-lg-block lh-1">
+                        <div class="fw-bold small" id="user-display-name">User Name</div>
+                        <div class="text-white-50" style="font-size:0.7rem;" id="user-display-nip">NIP. -</div>
+                    </div>
+                    <img id="user-avatar"
+                        src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop"
+                        class="avatar-box border-0" alt="Avatar">
+                </div>
+
+                <button id="gm-staff-fullscreen" type="button" class="btn btn-outline-light btn-sm gm-fullscreen"
+                    title="Layar penuh" aria-label="Layar penuh" aria-pressed="false" hidden><i class="fas fa-expand"
+                        aria-hidden="true"></i></button>
+                <button onclick="window.logout()" class="btn btn-danger btn-sm rounded-pill px-3 ms-2 shadow-sm"
+                    title="Keluar">
+                    <i class="fas fa-power-off"></i>
+                </button>
+            </div>
+        </nav>
+
+        <div class="gm-broadcast-stack no-print" aria-label="Pengumuman dan absen harian">
+            <div id="gm-broadcast-service" class="gm-service-line" role="status" hidden><span
+                    id="gm-broadcast-service-label">Menghubungkan pengumuman dan absen…</span><button
+                    id="gm-broadcast-retry" type="button" class="btn btn-outline-secondary btn-sm" hidden>Coba
+                    lagi</button></div>
+            <div id="gm-broadcast-action-error" class="gm-action-error" role="alert" hidden></div>
+            <section id="broadcast-running-bar" class="gm-running-bar" hidden aria-label="Pengumuman aktif">
+                <div id="gm-broadcast-marquee" class="gm-marquee" tabindex="0"
+                    aria-label="Isi pengumuman; sentuh untuk menjeda">
+                    <div class="gm-marquee-track"><span class="gm-marquee-copy"></span><span
+                            class="gm-marquee-copy gm-marquee-duplicate" aria-hidden="true"></span></div>
+                </div>
+                <button id="gm-broadcast-ack" type="button" class="btn btn-outline-dark btn-sm">Dimengerti</button>
+            </section>
+            <section id="attendance-running-bar" class="gm-running-bar gm-attendance-bar" hidden
+                aria-label="Absen harian">
+                <div id="gm-attendance-marquee" class="gm-marquee" tabindex="0"
+                    aria-label="Absen harian; sentuh untuk menjeda">
+                    <div class="gm-marquee-track"><span class="gm-marquee-copy"></span><span
+                            class="gm-marquee-copy gm-marquee-duplicate" aria-hidden="true"></span></div>
+                </div>
+                <button id="gm-attendance-submit" type="button" class="btn btn-success btn-sm">Absen saya Hari
+                    ini</button>
+            </section>
+
+        </div>
+
+
+        <div id="view-staff-workspace" class="d-none" style="position: relative; height: calc(100vh - 60px);">
+
+            <section id="gov-dikte-panel" class="gd-panel d-none" aria-label="GovDikte Smart">
+                <header class="gd-header" id="gd-drag-handle">
+                    <div class="gd-app-icon"><i class="fas fa-wave-square" aria-hidden="true"></i></div>
+                    <div class="gd-title"><strong>GovDikte <span>Smart</span></strong><small>Asisten suara lembar
+                            kerja</small></div>
+                    <button type="button" class="gd-icon-btn" id="gd-minimize" onclick="window.minimizeDiktePanel()"
+                        title="Ringkas panel" aria-label="Ringkas panel"><i class="fas fa-minus"></i></button>
+                    <button type="button" class="gd-icon-btn" onclick="window.closeDiktePanel()"
+                        title="Tutup panel dan matikan mikrofon" aria-label="Tutup panel"><i
+                            class="fas fa-xmark"></i></button>
+                </header>
+                <div class="gd-body">
+                    <div class="gd-target-card">
+                        <div class="gd-target-icon"><i class="fas fa-lock" aria-hidden="true"></i></div>
+                        <div class="gd-target-info"><span>SEL TUJUAN TERKUNCI</span><strong
+                                id="gd-target-coordinate">A1</strong><small id="gd-target-sheet">lembar_kerja 1</small>
+                        </div>
+                        <button type="button" id="gd-use-active" class="gd-subtle-btn"
+                            onclick="window.captureDikteTarget()" title="Kunci sel yang sedang dipilih"><i
+                                class="fas fa-crosshairs me-1"></i>Sel aktif</button>
+                    </div>
+                    <div class="gd-wave-wrap">
+                        <div class="gd-wave-top"><span id="gd-state-pill" class="gd-state-pill"><span></span><b
+                                    id="gd-state-text">Siap mendengarkan</b></span><span id="gd-time">00:00</span></div>
+                        <canvas id="gd-wave-canvas" height="94" aria-label="Gelombang dari sinyal mikrofon"></canvas>
+                        <div class="gd-wave-footer"><span id="gd-wave-caption">Gelombang tampil setelah mikrofon
+                                aktif</span><span id="gd-level-text">— dB</span></div>
+                        <div class="gd-level-track" role="meter" aria-label="Level sinyal mikrofon" aria-valuemin="0"
+                            aria-valuemax="100" aria-valuenow="0" id="gd-level-meter"><span id="gd-level-fill"></span>
+                        </div>
+                    </div>
+                    <div class="gd-controls">
+                        <button type="button" class="gd-record-btn" id="gd-record"
+                            onclick="window.startDikteRecording()"><i class="fas fa-microphone me-2"></i><span
+                                id="gd-record-label">Mulai dikte</span></button>
+                        <button type="button" class="gd-pause-btn" id="gd-pause" onclick="window.pauseDikteRecording()"
+                            disabled><i class="fas fa-pause"></i><span>Jeda</span></button>
+                    </div>
+                    <div class="gd-preview-heading"><label for="gd-preview">PRATINJAU TEKS</label><span
+                            id="gd-char-count">0 karakter</span></div>
+                    <textarea id="gd-preview" class="gd-preview" rows="3"
+                        placeholder="Hasil ucapan akan muncul di sini. Jeda untuk mengedit sebelum memasukkan ke sel."
+                        oninput="window.updateDiktePreview()"></textarea>
+                    <div id="gd-interim" class="gd-interim" aria-live="off"></div>
+                    <div id="gd-message" class="gd-message" role="status" aria-live="polite">Klik mikrofon, ucapkan
+                        teks, lalu periksa pratinjau.</div>
+                    <div class="gd-actions">
+                        <button type="button" class="gd-insert" id="gd-insert"
+                            onclick="window.applyDiktePreview('replace')" disabled><i
+                                class="fas fa-arrow-right-to-bracket me-1"></i>Masukkan</button>
+                        <button type="button" class="gd-append" id="gd-append"
+                            onclick="window.applyDiktePreview('append')" disabled><i
+                                class="fas fa-plus me-1"></i>Tambahkan</button>
+                        <button type="button" class="gd-cancel" onclick="window.cancelDikteDraft()">Batal</button>
+                    </div>
+                    <div class="gd-command-card">
+                        <label class="gd-command-toggle" for="gd-command-mode"><span><i
+                                    class="fas fa-terminal me-2"></i>Mode Perintah<small id="gd-mode-description">Ucapan
+                                    hanya menjadi teks</small></span><input id="gd-command-mode" type="checkbox"
+                                role="switch" onchange="window.toggleDikteCommandMode()"><span class="gd-switch"
+                                aria-hidden="true"></span></label>
+                        <div id="gd-command-help" class="gd-command-help d-none">
+                            <span>Ucapkan satu perintah utuh:</span>
+                            <div class="gd-command-chips">
+                                <code>Pindah ke C8</code><code>Baris berikutnya</code><code>Tambahkan ke isi sel</code><code>Batalkan input terakhir</code>
+                            </div>
+                            <div class="gd-command-test"><input id="gd-command-input" aria-label="Coba perintah teks"
+                                    placeholder="Coba perintah tanpa mikrofon"
+                                    onkeydown="if(event.key==='Enter'){event.preventDefault();window.runDikteTypedCommand();}"><button
+                                    type="button" onclick="window.runDikteTypedCommand()"
+                                    aria-label="Jalankan perintah"><i class="fas fa-play"></i></button></div>
+                        </div>
+                    </div>
+                    <footer class="gd-footer"><button type="button" id="gd-undo" onclick="window.undoDikteInput()"
+                            disabled><i class="fas fa-rotate-left me-1"></i>Undo input</button><span>Bahasa Indonesia ·
+                            Ctrl + Shift + D</span></footer>
+                </div>
+            </section>
+
+            <div id="gm-staff-edit-overlay" class="d-none" role="alert"
+                style="position:absolute;inset:0;z-index:1099;background:#f4faf7ed;display:grid;place-items:center">
+                <div class="bg-white border rounded-4 p-4 shadow" style="max-width:560px;margin:16px">
+                    <h5 class="fw-bold">Kendali lembar kerja</h5>
+                    <p id="gm-staff-edit-message"></p>
+                    <div class="d-flex flex-wrap gap-2"><button id="gm-staff-handover" type="button"
+                            class="btn btn-brand">Simpan & Serahkan</button><button id="gm-staff-reject" type="button"
+                            class="btn btn-outline-secondary">Tolak Permintaan</button><button id="gm-staff-discard"
+                            type="button" class="btn btn-outline-secondary">Unduh & Gunakan Versi Server</button><button
+                            id="gm-staff-reload" type="button" class="btn btn-brand d-none">Muat & Periksa Versi
+                            Terbaru</button><button type="button" onclick="window.exportToJson()"
+                            class="btn btn-outline-secondary">Unduh Backup Lokal</button></div>
+                </div>
+            </div>
+            <div id="luckysheet-wrapper">
+                <div id="luckysheet"></div>
+            </div>
+
+            
+            <!-- Floating Action Button: Dikte Suara (Voice Typing) -->
+            <button id="btn-staff-stt-fab" class="stt-fab" onclick="window.toggleSpeechRecognition()"
+                title="Dikte Suara (Voice Typing) - Ctrl+Shift+D">
+                <i class="fas fa-microphone fs-4"></i>
+            </button>
+
+            <button id="btn-staff-chat-fab" class="chat-fab" onclick="window.openStaffChatWithAdmin()"
+                title="Chat dengan Admin/Supervisor">
+                <i class="fas fa-comment-dots fs-4"></i>
+                <span id="staff-chat-unread-badge" class="chat-badge d-none">0</span>
+            </button>
+
+
+        </div>
+
+        <section id="gm-admin-workbench" class="d-none"
+            style="height:calc(100dvh - 100px);min-height:550px;background:#f3f7f5;position:relative">
+            <div class="p-3 bg-white border-bottom">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div>
+                        <h5 id="gm-admin-editor-title" class="fw-bold mb-1">Lembar Kerja Staf</h5><span
+                            id="gm-admin-mode" class="badge bg-secondary">Hanya baca</span><small
+                            class="text-muted ms-2">Akun tetap Admin · perubahan tercatat atas nama admin</small>
+                    </div><button id="gm-admin-back" type="button" class="btn btn-outline-secondary btn-sm">Kembali ke
+                        Live Monitor</button>
+                </div>
+                <div class="d-flex flex-wrap gap-2 mt-3"><button id="gm-admin-enable" type="button"
+                        class="btn btn-brand btn-sm">Aktifkan Edit</button><button id="gm-admin-save" type="button"
+                        class="btn btn-success btn-sm" disabled>Simpan Perubahan</button><button id="gm-admin-finish"
+                        type="button" class="btn btn-outline-success btn-sm" disabled>Selesai Mengedit</button><button
+                        id="gm-admin-dikte" type="button" class="btn btn-outline-secondary btn-sm" disabled><i
+                            class="fas fa-microphone me-1"></i>Dikte</button><button id="gm-admin-ocr" type="button"
+                        class="btn btn-outline-secondary btn-sm" disabled><i
+                            class="fas fa-camera me-1"></i>OCR</button><button id="gm-admin-export" type="button"
+                        class="btn btn-outline-secondary btn-sm">Unduh Salinan JSON</button><button id="gm-admin-reload"
+                        type="button" class="btn btn-outline-secondary btn-sm">Muat Versi Server</button></div>
+                <p id="gm-admin-editor-status" class="small text-muted mt-2 mb-0" role="status" aria-live="polite">
+                    Memuat…</p>
+            </div>
+            <div id="gm-admin-sheet" style="position:relative;height:calc(100% - 155px);min-height:370px"></div>
+        </section>
+
+        <div id="view-admin-dashboard" class="d-none d-flex">
+            <!-- Sidebar Admin -->
+            <div class="admin-sidebar py-4 d-flex flex-column">
+                <div class="text-uppercase text-secondary fw-bold px-4 mb-3"
+                    style="font-size:0.75rem; letter-spacing: 1px;">Menu Utama</div>
+                <ul class="nav nav-pills flex-column mb-auto gap-1 px-2">
+                    <li class="nav-item">
+                        <a href="#" class="nav-link active"
+                            onclick="window.switchAdminTab('tab-overview', this); return false;"><i
+                                class="fas fa-border-all me-3"></i> Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link"
+                            onclick="window.switchAdminTab('tab-live-peek', this); return false;"><i
+                                class="fas fa-display me-3"></i> Live Monitor</a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link"
+                            onclick="window.switchAdminTab('tab-activity-time', this); return false;"><i
+                                class="fas fa-clock-rotate-left me-3"></i> Aktivitas & Waktu</a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link"
+                            onclick="window.switchAdminTab('tab-audit-logs', this); return false;"><i
+                                class="fas fa-list-check me-3"></i> Log Sistem</a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link"
+                            onclick="window.switchAdminTab('tab-staff-mgmt', this); return false;"><i
+                                class="fas fa-users-gear me-3"></i> Data Pegawai</a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link"
+                            onclick="window.switchAdminTab('tab-reports', this); return false;"><i
+                                class="fas fa-print me-3"></i> Laporan e-Kinerja</a>
+                    </li>
+                </ul>
+                <div class="mt-auto px-4">
+                    <div
+                        class="p-3 bg-dark rounded-3 text-center small text-secondary border border-secondary border-opacity-25">
+                        <i class="fas fa-shield-check text-success me-1"></i> Server Tersambung
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex-grow-1 p-4 overflow-auto" style="height: calc(100vh - 60px);">
+                <div id="tab-overview" class="admin-tab-content animate__animated animate__fadeIn">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <div>
+                            <h3 class="fw-bold mb-1">Ringkasan Sistem</h3>
+                            <p class="text-muted mb-0">Pemantauan aktivitas kerja staf Pemkab Banyuasin secara terpusat.
+                            </p>
+                        </div>
+                        <button onclick="window.refreshAdminData()"
+                            class="btn btn-outline-secondary btn-sm rounded-pill"><i class="fas fa-rotate me-1"></i>
+                            Refresh</button>
+                    </div>
+
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-3">
+                            <div class="glass-card p-4">
+                                <span class="text-muted small fw-bold">Staf Aktif</span>
+                                <h2 class="fw-bold text-brand mt-2 mb-0" id="stat-active-staff">0</h2>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="glass-card p-4">
+                                <span class="text-muted small fw-bold">Aktivitas Dimuat</span>
+                                <h2 class="fw-bold text-success mt-2 mb-0" id="stat-total-input">0</h2>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="glass-card p-4">
+                                <span class="text-muted small fw-bold">Dikte Suara (STT)</span>
+                                <h2 class="fw-bold text-warning mt-2 mb-0" id="stat-stt-count">0</h2>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="glass-card p-4">
+                                <span class="text-muted small fw-bold">Sel Terakhir Ditulis</span>
+                                <h2 class="fw-bold text-info mt-2 mb-0" id="stat-last-cell">A1</h2>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div id="gm-broadcast-upgrade" class="alert alert-info d-none gm-broadcast-notice">Siaran dan absen
+                        harian memerlukan Code.gs terbaru. Perbarui deployment Apps Script dengan paket yang disediakan,
+                        lalu klik Perbarui.</div>
+                    <section class="glass-card p-4 mb-4">
+                        <div class="d-flex justify-content-between align-items-center gap-3 mb-3">
+                            <h5 class="fw-bold mb-0">Siaran Pengumuman</h5><button id="gm-broadcast-refresh"
+                                type="button" class="btn btn-outline-secondary btn-sm">Perbarui</button>
+                        </div>
+                        <div class="gm-broadcast-widget">
+                            <form id="gm-broadcast-form">
+                                <div class="row g-3">
+                                    <div class="col-sm-7"><label class="form-label"
+                                            for="gm-broadcast-select">Kategori</label><select id="gm-broadcast-select"
+                                            class="form-select">
+                                            <option>Penting</option>
+                                            <option>Pengingat Jam Kerja</option>
+                                            <option selected>Informasi</option>
+                                            <option>Instruksi</option>
+                                        </select></div>
+                                    <div class="col-sm-5"><label class="form-label" for="gm-broadcast-hours">Masa
+                                            berlaku</label><select id="gm-broadcast-hours" class="form-select">
+                                            <option value="1">1 jam</option>
+                                            <option value="4">4 jam</option>
+                                            <option value="8">8 jam</option>
+                                            <option value="24" selected>24 jam</option>
+                                            <option value="72">3 hari</option>
+                                            <option value="168">7 hari</option>
+                                        </select></div>
+                                </div><label class="form-label mt-3" for="gm-broadcast-message">Pesan
+                                    pengumuman</label><textarea id="gm-broadcast-message" class="form-control" rows="3"
+                                    maxlength="1000" required
+                                    placeholder="Tulis pengumuman untuk seluruh pengguna…"></textarea>
+                                <div id="gm-broadcast-preview" class="border rounded-3 p-3 my-3"
+                                    aria-label="Pratinjau siaran"></div><button id="gm-broadcast-publish"
+                                    class="btn btn-brand" type="submit"><i class="fas fa-bullhorn me-2"
+                                        aria-hidden="true"></i>Siarkan</button>
+                                <p id="gm-broadcast-connection" class="gm-broadcast-meta mt-3 mb-0" role="status">Memuat
+                                    siaran dan absen…</p>
+                            </form>
+                            <div>
+                                <h6 class="fw-bold">Riwayat siaran</h6>
+                                <div id="gm-broadcast-history" class="gm-broadcast-history">Belum ada siaran dimuat.
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="mb-4">
+                        <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mb-3">
+                            <div>
+                                <h5 class="fw-bold mb-1">Kehadiran & Profil Staf</h5>
+                                <p id="gm-attendance-summary" class="gm-broadcast-meta mb-0">Memuat kehadiran hari ini…
+                                </p>
+                            </div>
+                        </div>
+                        <div id="gm-staff-profile-grid" class="gm-profile-grid"></div>
+                    </section>
+
+                    <div class="glass-card p-4">
+                        <h5 class="fw-bold mb-3">Aktivitas Terakhir</h5>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Waktu</th>
+                                        <th>Nama Staf</th>
+                                        <th>Sel</th>
+                                        <th>Nilai Input</th>
+                                        <th>Metode</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-overview-recent"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-live-peek" class="admin-tab-content d-none animate__animated animate__fadeIn">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <div>
+                            <h3 class="fw-bold mb-1">Live Monitor</h3>
+                            <div id="gm-monitor-upgrade" class="alert alert-warning small d-none mt-2">Pencatatan Log
+                                terakhir memerlukan pembaruan Apps Script. Monitor tetap menampilkan salinan tersimpan
+                                sampai pembaruan diterapkan.</div>
+                            <p class="text-muted mb-0">Pantau layar kerja staf secara langsung.</p>
+                        </div>
+                        <button id="btn-toggle-sim" onclick="window.toggleLiveSimulation()"
+                            class="btn btn-warning rounded-pill fw-bold">
+                            <i class="fas fa-play me-1"></i> Mulai Simulasi
+                        </button>
+                    </div>
+                    <div class="row g-4" id="live-peek-grid"></div>
+                </div>
+
+                <div id="tab-activity-time" class="admin-tab-content d-none animate__animated animate__fadeIn">
+                    <div class="glass-card p-3 mb-4">
+                        <div class="d-flex align-items-end flex-wrap gap-3">
+                            <div><label for="activity-start" class="form-label">Tanggal awal</label><input type="date"
+                                    id="activity-start" class="form-control" onchange="gmActivityLoad(true)"></div>
+                            <div><label for="activity-end" class="form-label">Tanggal akhir</label><input type="date"
+                                    id="activity-end" class="form-control" onchange="gmActivityLoad(true)"></div>
+                            <div class="flex-grow-1"><label for="activity-filter-staff"
+                                    class="form-label">Staf</label><select id="activity-filter-staff"
+                                    onchange="window.filterActivityStream()" class="form-select">
+                                    <option value="ALL">Semua Staf</option>
+                                </select></div>
+                            <div><label for="activity-kind" class="form-label">Jenis aktivitas</label><select
+                                    id="activity-kind" class="form-select" onchange="gmActivityRenderEvents()">
+                                    <option value="ALL">Semua aktivitas</option>
+                                    <option value="login">Login</option>
+                                    <option value="edit">Edit tersimpan</option>
+                                    <option value="dictation">Dikte tersimpan</option>
+                                    <option value="ocr">OCR tersimpan</option>
+                                    <option value="active">Kembali aktif</option>
+                                    <option value="idle">Tidak aktif</option>
+                                    <option value="admin">Kendali admin</option>
+                                    <option value="release">Kendali kembali</option>
+                                    <option value="logout">Keluar</option>
+                                </select></div>
+                            <button class="btn btn-outline-secondary" onclick="gmActivityToday()">Hari ini</button>
+                        </div>
+                        <div id="activity-time-status" class="text-muted mt-3" role="status">Memuat waktu kerja…</div>
+                    </div>
+                    <div id="activity-time-summary" class="row g-3 mb-4"></div>
+                    <div class="row g-4">
+                        <div class="col-lg-7">
+                            <div class="glass-card p-4">
+                                <h5 class="fw-bold mb-3">Linimasa Aktivitas</h5>
+                                <div id="activity-event-count" class="text-muted mb-3"></div>
+                                <div class="timeline-list d-flex flex-column gap-3" id="activity-stream-container">
+                                </div><button id="activity-more" class="btn btn-outline-secondary mt-3 d-none"
+                                    onclick="gmActivityMore()">Tampilkan lebih banyak</button>
+                            </div>
+                        </div>
+                        <div class="col-lg-5">
+                            <div class="glass-card p-4">
+                                <h5 class="fw-bold mb-2">Durasi Kerja</h5>
+                                <p class="text-muted mb-3">Klik durasi untuk melihat rincian. Waktu ditampilkan dalam
+                                    WIB.</p>
+                                <div class="d-flex flex-column gap-3" id="time-tracker-container"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-audit-logs" class="admin-tab-content d-none animate__animated animate__fadeIn">
+                    <div class="glass-card p-4 mb-4">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+                            <div>
+                                <h4 class="fw-bold mb-1">Log Sistem</h4>
+                                <div class="text-muted">Perubahan sel yang tersimpan dan konteks akses staf.</div>
+                            </div>
+                            <div class="d-flex gap-2"><button class="btn btn-outline-primary"
+                                    onclick="gmSystemLoad(true)"><i
+                                        class="fas fa-rotate me-2"></i>Perbarui</button><button
+                                    class="btn btn-outline-success" onclick="window.exportAuditLogCSV()"><i
+                                        class="fas fa-file-csv me-2"></i>Ekspor CSV</button></div>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-sm-6 col-xl-2"><label class="form-label" for="system-start">Tanggal
+                                    awal</label><input class="form-control" type="date" id="system-start"
+                                    onchange="gmSystemLoad(true)"></div>
+                            <div class="col-sm-6 col-xl-2"><label class="form-label" for="system-end">Tanggal
+                                    akhir</label><input class="form-control" type="date" id="system-end"
+                                    onchange="gmSystemLoad(true)"></div>
+                            <div class="col-sm-6 col-xl-3"><label class="form-label"
+                                    for="audit-filter-staff">Staf</label><select id="audit-filter-staff"
+                                    class="form-select" onchange="gmSystemLoad(true)">
+                                    <option value="ALL">Semua Staf</option>
+                                </select></div>
+                            <div class="col-sm-6 col-xl-3"><label class="form-label"
+                                    for="audit-filter-method">Metode</label><select id="audit-filter-method"
+                                    class="form-select" onchange="window.applyAuditLogFilters()">
+                                    <option value="ALL">Semua Metode</option>
+                                    <option value="Manual">Ketik Manual</option>
+                                    <option value="Speech-to-Text">Dikte Suara</option>
+                                    <option value="GovLens OCR">GovLens OCR</option>
+                                </select></div>
+                            <div class="col-xl-2 d-flex align-items-end"><button class="btn btn-outline-secondary w-100"
+                                    onclick="window.resetAuditFilters()">Hari ini</button></div>
+                        </div>
+                        <div id="system-load-status" class="text-muted mt-3" role="status">Memuat log sistem…</div>
+                    </div>
+                    <div class="glass-card p-4 mb-4">
+                        <h5 class="fw-bold mb-4">Metode Input</h5>
+                        <div class="row g-4 align-items-center">
+                            <div class="col-md-4">
+                                <div id="system-method-chart" class="gm-method-donut mx-auto" role="img"
+                                    aria-label="Belum ada data metode">
+                                    <div class="gm-method-core"><strong
+                                            id="system-method-total">0</strong><span>perubahan tersimpan</span></div>
+                                </div>
+                            </div>
+                            <div class="col-md-8">
+                                <div id="system-method-legend" class="row g-3"></div>
+                                <div class="text-muted mt-3">Grafik mengikuti periode dan staf. Klik metode untuk
+                                    memfilter log.</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0">Info Staf</h5><span id="system-profile-count"
+                            class="text-muted"></span>
+                    </div>
+                    <div id="system-staff-cards" class="row g-3 mb-4"></div>
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                        <h5 class="fw-bold mb-0">Riwayat Perubahan</h5><span id="system-result-count"
+                            class="text-muted"></span>
+                    </div>
+                    <div id="system-log-cards" class="row g-3"></div><button id="system-more"
+                        class="btn btn-outline-primary mt-4 d-none" onclick="gmSystemMore()">Tampilkan lebih
+                        banyak</button>
+                </div>
+                <div class="modal fade" id="modalSystemLog" tabindex="-1" aria-labelledby="system-detail-title"
+                    aria-hidden="true">
+                    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="system-detail-title">Detail Log</h5><button
+                                    class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                            </div>
+                            <div class="modal-body" id="system-detail-body"></div>
+                        </div>
+                    </div>
+                </div>
+
+
+                <div id="tab-staff-mgmt" class="admin-tab-content d-none animate__animated animate__fadeIn">
+                    <div class="glass-card p-4">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h5 class="fw-bold mb-0">Data Pegawai & Staf</h5>
+                            <button onclick="window.openModalAddUser()" class="btn btn-brand btn-sm rounded-pill px-3">
+                                <i class="fas fa-user-plus me-1"></i> Tambah Pegawai
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Foto</th>
+                                        <th>Nama Pegawai</th>
+                                        <th>NIP</th>
+                                        <th>Jabatan</th>
+                                        <th>Role</th>
+                                        <th>Status</th>
+                                        <th>Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-staff-list"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-reports" class="admin-tab-content d-none animate__animated animate__fadeIn">
+                    <div id="tab-recap-report" class="space-y-6 bg-slate-50 p-6 rounded-xl text-slate-800 font-sans">
+
+                        <!-- Header Utama Kontrol & Tombol Aksi -->
+                        <div
+                            class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print">
+                            <div>
+                                <h2 class="text-xl font-bold text-slate-800 flex items-center space-x-2">
+                                    <i class="fa-solid fa-file-lines text-emerald-600"></i>
+                                    <span>Laporan Rekapitulasi Kerja ASN / Pegawai</span>
+                                </h2>
+                                <p class="text-sm text-slate-500 mt-1">Sistem Laporan Capaian Kerja & Produktivitas
+                                    resmi Pemkab Banyuasin (Siap Cetak PDF & Ekspor Excel)</p>
+                            </div>
+
+                            <div class="flex items-center space-x-3">
+                                <button onclick="window.printOfficialReport()"
+                                    class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm flex items-center space-x-2 transition">
+                                    <i class="fa-solid fa-print"></i>
+                                    <span>Cetak Dokumen Resmi (PDF)</span>
+                                </button>
+                                <button onclick="window.exportReportExcel()"
+                                    class="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm flex items-center space-x-2 transition">
+                                    <i class="fa-solid fa-file-excel"></i>
+                                    <span>Ekspor Laporan Excel</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Filter Periode Laporan & Pemilihan Pegawai -->
+                        <div
+                            class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-wrap items-center gap-4 no-print">
+                            <div class="flex flex-col space-y-1">
+                                <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">Periode
+                                    Laporan</label>
+                                <select id="recap-period" onchange="window.handlePeriodChange(this.value)"
+                                    class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white font-medium text-slate-700 w-52">
+                                    <option value="TODAY">Hari ini</option>
+                                    <option value="WEEK">7 hari terakhir</option>
+                                    <option value="MONTH" selected>Bulan ini</option>
+                                    <option value="ALL">Semua waktu</option>
+                                    <option value="CUSTOM">Tanggal pilihan</option>
+                                </select>
+                                <div class="d-flex gap-2 mt-2"><input type="date" id="report-date-start"
+                                        class="form-control form-control-sm" aria-label="Tanggal mulai laporan"
+                                        onchange="window.reportDateChanged()"><input type="date" id="report-date-end"
+                                        class="form-control form-control-sm" aria-label="Tanggal akhir laporan"
+                                        onchange="window.reportDateChanged()"></div>
+                            </div>
+
+                            <div class="flex flex-col space-y-1">
+                                <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">Pilih Pegawai /
+                                    Staf</label>
+                                <select id="recap-staff" onchange="window.generateReport()"
+                                    class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-emerald-500 font-medium text-slate-700 w-80">
+                                    <option value="ALL" selected>-- Semua Pegawai / Staf Pemkab --</option>
+                                </select>
+                            </div>
+
+                            <div class="flex items-end h-full pt-5">
+                                <button onclick="window.generateReport()"
+                                    class="bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center space-x-2 transition">
+                                    <i class="fa-solid fa-filter text-xs"></i>
+                                    <span>Tampilkan</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="glass-card p-4 no-print">
+                            <div class="d-flex flex-wrap gap-3 align-items-end">
+                                <div class="flex-grow-1"><label for="gm-archive-supervisor"
+                                        class="form-label fw-bold">Supervisor persetujuan internal</label><select
+                                        id="gm-archive-supervisor" class="form-select"></select></div><button
+                                    id="gm-archive-publish" class="btn btn-brand">Terbitkan Arsip & QR</button>
+                            </div>
+                            <p id="gm-archive-state" class="text-muted mt-3 mb-0" role="status">Belum diterbitkan.</p>
+                        </div>
+
+                        <!-- Printable Kop Surat & Official Document -->
+                        <div id="printable-recap-area"
+                            class="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-6 print:shadow-none print:border-none print:p-2">
+
+                            <!-- Kop Surat Resmi Pemkab Banyuasin -->
+                            <div class="border-b-4 border-slate-900 pb-4 text-center">
+                                <div class="gm-report-letterhead">
+                                    <img src="https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg"
+                                        class="gm-report-logo" width="104" height="118" style="object-fit:contain"
+                                        alt="Lambang Kabupaten Banyuasin">
+                                    <div class="text-center">
+                                        <h3 class="text-base font-bold uppercase tracking-wider text-slate-900">
+                                            PEMERINTAH KABUPATEN BANYUASIN</h3>
+                                        <h2 class="text-xl md:text-2xl font-black text-slate-900 tracking-wide mt-0.5">
+                                            Dinas Koperasi Usaha Kecil dan Menengah, Perindustrian dan Perdagangan <span
+                                                class="gm-report-agency-region">Kabupaten Banyuasin</span></h2>
+                                        <p class="text-xs text-slate-600 mt-1 font-medium">Komplek Perkantoran Pemkab
+                                            Banyuasin Jl. Choirul Chobir Pangkalan Balai Kecamatan Banyuasin III
+                                            Kabupaten Banyuasin Provinsi Sumatera Selatan</p>
+                                        <p class="text-[11px] text-slate-500 mt-0.5">Telepon 0711-7385661 Fax
+                                            0711-7690026 | Email: diskoperindag@banyuasinkab.go.id | Website:
+                                            www.dpkukm.banyuasinkab.go.id</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="text-center space-y-1 pt-2">
+                                <h3
+                                    class="font-black text-base md:text-lg uppercase text-slate-900 underline tracking-wide">
+                                    LAPORAN REKAPITULASI CAPAIAN OUTPUT & INPUT KERJA PEGAWAI</h3>
+                                <p class="text-xs text-slate-600 font-medium">Periode Laporan: <span
+                                        class="font-bold text-slate-800" id="report-period-text">2026-09-01 s/d
+                                        2026-09-27</span></p>
+                            </div>
+
+                            <!-- Kartu Metrik KPI -->
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2">
+                                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 text-center shadow-sm">
+                                    <p class="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">TOTAL
+                                        SEL DITULIS</p>
+                                    <h4 class="text-3xl font-black text-slate-800 mt-1" id="kpi-total-cells">0</h4>
+                                    <p class="text-[10px] text-slate-400 font-medium mt-1"><span
+                                            id="kpi-sub-total">0</span> Aktivitas Terdaftar</p>
+                                </div>
+                                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 text-center shadow-sm">
+                                    <p class="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                                        PENGETIKAN MANUAL</p>
+                                    <h4 class="text-3xl font-black text-slate-800 mt-1" id="kpi-manual-count">0</h4>
+                                    <p class="text-[10px] text-slate-400 font-medium mt-1"><span
+                                            id="kpi-manual-percent">0%</span> Total</p>
+                                </div>
+                                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 text-center shadow-sm">
+                                    <p class="text-[10px] font-extrabold text-amber-600 uppercase tracking-wider">DIKTE
+                                        SUARA (STT)</p>
+                                    <h4 class="text-3xl font-black text-amber-500 mt-1" id="kpi-stt-count">0</h4>
+                                    <p class="text-[10px] text-slate-400 font-medium mt-1"><span
+                                            id="kpi-stt-percent">0%</span> Total</p>
+                                </div>
+                                <div
+                                    class="bg-slate-50 p-4 rounded-xl border border-slate-200 text-center shadow-sm flex flex-col justify-between">
+                                    <div>
+                                        <p class="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider">
+                                            PORSI DIKTE + OCR</p>
+                                        <h4 class="text-3xl font-black text-emerald-600 mt-1"
+                                            id="kpi-productivity-index">0%</h4>
+                                    </div>
+                                    <div class="flex justify-center mt-1">
+                                        <span id="kpi-productivity-badge"
+                                            class="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold flex items-center space-x-1">
+                                            <i class="fa-solid fa-circle-check text-emerald-600"></i>
+                                            <span id="kpi-productivity-status">Sangat Baik</span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Analisis Visual Rasio Input & Evaluasi -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                                <div class="bg-slate-50 p-5 rounded-xl border border-slate-200 space-y-3">
+                                    <h4 class="font-bold text-sm text-slate-800 flex items-center space-x-2">
+                                        <i class="fa-solid fa-chart-pie text-sky-600"></i>
+                                        <span>Rasio Metode Input Kerja Pegawai</span>
+                                    </h4>
+                                    <div class="space-y-2.5 text-xs pt-1">
+                                        <div>
+                                            <div class="flex justify-between font-semibold text-slate-700 mb-1">
+                                                <span>Manual Typing</span>
+                                                <span class="font-bold" id="bar-manual-label">0 (0%)</span>
+                                            </div>
+                                            <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                                                <div id="bar-manual-progress" class="bg-slate-700 h-full rounded-full"
+                                                    style="width: 0%"></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div class="flex justify-between font-semibold text-slate-700 mb-1">
+                                                <span>Speech-to-Text (STT)</span>
+                                                <span class="font-bold text-amber-600" id="bar-stt-label">0 (0%)</span>
+                                            </div>
+                                            <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                                                <div id="bar-stt-progress" class="bg-amber-500 h-full rounded-full"
+                                                    style="width: 0%"></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div class="flex justify-between font-semibold text-slate-700 mb-1">
+                                                <span>Gemini Vision AI OCR</span>
+                                                <span class="font-bold text-sky-600" id="bar-ocr-label">0 (0%)</span>
+                                            </div>
+                                            <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                                                <div id="bar-ocr-progress" class="bg-sky-500 h-full rounded-full"
+                                                    style="width: 0%"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="bg-slate-50 p-5 rounded-xl border border-slate-200 space-y-2">
+                                    <h4 class="font-bold text-sm text-slate-800 flex items-center space-x-2">
+                                        <i class="fa-solid fa-clipboard-check text-amber-500"></i>
+                                        <span>Ringkasan Evaluasi Kinerja</span>
+                                    </h4>
+                                    <p class="text-xs text-slate-600 leading-relaxed pt-1"
+                                        id="narrative-evaluation-text">
+                                        Berdasarkan rekapitulasi data aktivitas GovMonitor Pemkab Banyuasin, total input
+                                        dokumen yang telah tercatat berjumlah <strong class="text-slate-900">0 entri
+                                            sel</strong>. Penggunaan inovasi Dikte Suara (STT) mencapai <strong
+                                            class="text-slate-900">0%</strong> yang membantu mempercepat pengisian
+                                        lembar kerja pegawai secara signifikan. Laporan ini merangkum aktivitas
+                                        penyuntingan yang tercatat dalam periode pilihan. Setiap penyuntingan dihitung
+                                        sebagai satu aktivitas; persentase Dikte + OCR menunjukkan metode input, bukan
+                                        penilaian kinerja resmi.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Tabel Detail Capaian Pegawai -->
+                            <div class="pt-2 overflow-x-auto">
+                                <table class="w-full text-xs text-left border-collapse border border-slate-300">
+                                    <thead>
+                                        <tr class="bg-slate-800 text-white uppercase text-[10px]">
+                                            <th class="p-2.5 border border-slate-700 text-center w-10">No</th>
+                                            <th class="p-2.5 border border-slate-700">Nama Pegawai / Staf</th>
+                                            <th class="p-2.5 border border-slate-700">NIP & Jabatan</th>
+                                            <th class="p-2.5 border border-slate-700 text-center">Aktivitas Dimuat</th>
+                                            <th class="p-2.5 border border-slate-700 text-center">Manual</th>
+                                            <th class="p-2.5 border border-slate-700 text-center">Dikte Suara (STT)</th>
+                                            <th class="p-2.5 border border-slate-700 text-center">Pindai AI (OCR)</th>
+                                            <th class="p-2.5 border border-slate-700 text-center">Indeks Produktivitas
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-ekinerja-report" class="divide-y divide-slate-200 bg-white">
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Tabel Sampel Input -->
+                            <div class="pt-4 space-y-2">
+                                <h4 class="font-bold text-xs text-slate-800 flex items-center space-x-1.5">
+                                    <i class="fa-solid fa-list-check text-slate-600"></i>
+                                    <span>Rincian Sampel Input Aktivitas Terbaru</span>
+                                </h4>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-xs text-left border-collapse border border-slate-300">
+                                        <thead>
+                                            <tr class="bg-slate-100 text-slate-700 font-bold">
+                                                <th class="p-2 border border-slate-300 text-center">Waktu</th>
+                                                <th class="p-2 border border-slate-300">Nama Staf / Operator</th>
+                                                <th class="p-2 border border-slate-300 text-center">Sel</th>
+                                                <th class="p-2 border border-slate-300">Isi / Nilai Input Sel</th>
+                                                <th class="p-2 border border-slate-300 text-center">Metode</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tbody-sample-activities">
+                                            <tr>
+                                                <td colspan="5"
+                                                    class="p-4 border border-slate-300 text-center text-slate-400 italic">
+                                                    Belum ada sampel data.</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Kolom Tanda Tangan -->
+                            <div class="grid pt-10 text-xs"
+                                style="grid-template-columns:minmax(0,1fr) 150px minmax(0,1fr);gap:16px;break-inside:avoid">
+                                <div class="text-center space-y-16">
+                                    <p class="text-slate-700">Mengetahui / Menyetujui,<br><strong
+                                            class="text-slate-900">Atasan Langsung / Supervisor</strong></p>
+                                    <div class="space-y-0.5">
+                                        <p class="font-bold underline text-slate-900 uppercase"
+                                            id="sign-supervisor-nama">RUDI HERMAWAN, S.Kom</p>
+                                        <p class="text-[11px] text-slate-500">NIP. <span
+                                                id="sign-supervisor-nip">19850615 201001 1 003</span></p>
+                                    </div>
+                                </div>
+
+                                <div id="gm-report-qr" class="text-center"
+                                    style="align-self:center;font-size:11px;overflow-wrap:anywhere">QR arsip tersedia
+                                    setelah laporan diterbitkan.</div>
+
+                                <div class="text-center space-y-16">
+                                    <p class="text-slate-700">Pangkalan Balai, <span id="sign-current-date">27 September
+                                            2026</span><br><strong class="text-slate-900">Pejabat Pembuat
+                                            Laporan</strong></p>
+                                    <div class="space-y-0.5">
+                                        <p class="font-bold underline text-slate-900 uppercase" id="sign-pegawai-nama">
+                                            ADMIN SYSTEM GOVMONITOR</p>
+                                        <p class="text-[11px] text-slate-500" id="sign-pegawai-nip">Diskoperindag Pemkab
+                                            Banyuasin</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                        <div class="glass-card p-4 no-print">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="fw-bold mb-0">Arsip Laporan Diterbitkan</h5><button id="gm-archive-refresh"
+                                    class="btn btn-outline-secondary btn-sm">Perbarui arsip</button>
+                            </div>
+                            <div id="gm-archive-list" class="d-flex flex-column gap-3">Memuat arsip…</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL QUICK CHAT -->
+
+    <div class="modal fade" id="modalQuickChat" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content glass-card border-0 overflow-hidden">
+                <div class="modal-header border-bottom-0 text-white py-3"
+                    style="background-color: var(--brand-primary);">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-comments fs-4 text-warning"></i>
+                        <div>
+                            <h5 class="fw-bold mb-0 text-white" id="chat-hub-header-title">GovMonitor Chat Hub</h5>
+                            <small class="text-white-50" style="font-size: 0.75rem;">Komunikasi Langsung Admin & Staf
+                                Pemkab Banyuasin</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <div class="row g-0">
+                        <div class="col-md-4 border-end bg-light" id="chat-staff-selector-col">
+                            <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+                                <strong class="small text-muted text-uppercase">Daftar Staf</strong>
+                                <span class="badge bg-secondary extra-small" id="chat-total-staff-count">0 Staf</span>
+                            </div>
+                            <div class="list-group list-group-flush overflow-auto" style="max-height: 380px;"
+                                id="chat-staff-list-group"></div>
+                        </div>
+                        <div class="col-md-8 d-flex flex-column" id="chat-messages-col" style="height: 380px;">
+                            <div class="p-3 bg-white border-bottom d-flex align-items-center justify-content-between">
+                                <div class="d-flex align-items-center gap-2">
+                                    <img id="chat-active-avatar"
+                                        src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=200&auto=format&fit=crop"
+                                        class="avatar-box" alt="Avatar">
+                                    <div>
+                                        <h6 class="fw-bold mb-0 text-dark" id="chat-active-nama">Admin / Supervisor</h6>
+                                        <small class="text-muted extra-small" id="chat-active-nip">Rudi Hermawan,
+                                            S.Kom</small>
+                                    </div>
+                                </div>
+                                <span
+                                    class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 extra-small"><i
+                                        class="fas fa-circle me-1 text-success" style="font-size: 0.5rem;"></i>Chat
+                                    internal</span>
+                            </div>
+                            <div class="p-3 flex-grow-1 overflow-auto d-flex flex-column gap-2"
+                                id="chat-messages-container" style="background:#f8fafc;"></div>
+                            <div class="p-3 bg-white border-top">
+                                <form id="form-chat-send" onsubmit="window.sendQuickChatMessage(event)"
+                                    class="d-flex gap-2">
+                                    <input type="text" id="chat-input-text" class="form-control bg-light"
+                                        placeholder="Ketik pesan Anda..." required autocomplete="off">
+                                    <button type="submit" class="btn btn-brand px-4"><i
+                                            class="fas fa-paper-plane"></i></button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL STAFF AUDIT -->
+    <div class="modal fade no-print" id="modalAttendanceHistory" tabindex="-1"
+        aria-labelledby="gm-attendance-history-title" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 id="gm-attendance-history-title" class="modal-title">Riwayat Absen Harian</h5><button
+                        type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                </div>
+                <div class="modal-body"><label for="gm-attendance-history-date" class="form-label">Tanggal
+                        WIB</label><input type="date" id="gm-attendance-history-date" class="form-control mb-3"><label
+                        for="gm-attendance-history-name" class="form-label">Cari nama staf</label><input type="search"
+                        id="gm-attendance-history-name" class="form-control mb-3" placeholder="Ketik nama staf…">
+                    <p id="gm-attendance-history-count" class="gm-broadcast-meta" role="status"></p>
+                    <div class="table-responsive">
+                        <table class="table gm-attendance-table">
+                            <thead>
+                                <tr>
+                                    <th>Nama staf</th>
+                                    <th>Tanggal</th>
+                                    <th>Jam tercatat</th>
+                                </tr>
+                            </thead>
+                            <tbody id="gm-attendance-history-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal fade no-print" id="modalReportArchive" tabindex="-1" aria-labelledby="gm-archive-preview-title"
+        aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 id="gm-archive-preview-title" class="modal-title">Dokumen arsip yang tercatat</h5><button
+                        class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                </div>
+                <div class="modal-body p-0"><iframe id="gm-archive-frame" title="Salinan tetap laporan" sandbox=""
+                        style="width:100%;height:75vh;border:0"></iframe></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalStaffMyAudit" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content glass-card border-0">
+                <div class="modal-header bg-primary text-white py-2.5 border-bottom-0"
+                    style="background-color: var(--brand-primary) !important;">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-list-check fs-5 text-warning"></i>
+                        <div>
+                            <h6 class="fw-bold mb-0 text-white">Riwayat Audit Input Saya</h6>
+                            <small class="text-white-50 extra-small">Catatan perubahan sel spreadsheet yang telah Anda
+                                masukkan</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-3">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle extra-small">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Log ID</th>
+                                    <th>Waktu</th>
+                                    <th>Sel</th>
+                                    <th>Nilai Baru</th>
+                                    <th>Nilai Lama</th>
+                                    <th>Metode</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-staff-my-audit"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL IMPOR FILE EXCEL GOOGLE SPREADSHEETS STYLE -->
+    <div class="modal fade" id="modalImportExcel" tabindex="-1" aria-labelledby="modalImportExcelLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content shadow-lg border-0 rounded-4">
+                <div class="modal-header bg-light border-bottom px-4 py-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <img src="https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg" width="26" height="26" style="object-fit:contain" alt="Logo">
+                        <h5 class="modal-title fw-bold mb-0 text-dark" id="modalImportExcelLabel">Impor File Excel</h5>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <!-- Dropzone Drag & Drop -->
+                    <!-- Dropzone Drag & Drop -->
+                    <div id="excel-dropzone" class="border-2 rounded-4 p-5 text-center bg-light transition-all mb-4"
+                         style="border-color:#0f766e!important; border-style:dashed; cursor:pointer">
+                        <i class="fas fa-file-excel fs-1 text-success mb-3"></i>
+                        <h6 class="fw-bold mb-1">Tarik & Lepaskan File Excel (.xlsx) di sini</h6>
+                        <p class="text-muted small mb-3">Semua warna latar, garis tepi (border), formula, font, dan format sel akan dipertahankan persis seperti aslinya.</p>
+                        <button type="button" class="btn btn-brand btn-sm px-4 rounded-pill" onclick="event.stopPropagation(); document.getElementById('input-file-xlsx').click();">
+                            <i class="fas fa-folder-open me-2"></i>Pilih File dari Perangkat
+                        </button>
+                        <div id="selected-file-info" class="mt-3 d-none alert alert-success py-2 px-3 small d-flex align-items-center justify-content-between mb-0" onclick="event.stopPropagation()">
+                            <span id="selected-file-name" class="fw-semibold"></span>
+                            <span id="selected-file-size" class="badge bg-success bg-opacity-25 text-success"></span>
+                        </div>
+                    </div>
+                    <!-- Input file di luar dropzone untuk mencegah event bubbling rekursif -->
+                    <input type="file" id="input-file-xlsx" class="d-none" accept=".xlsx,.xls,.csv" onchange="window.handleSelectedXlsxFile(this.files[0])" onclick="event.stopPropagation()">
+
+                    <!-- Pilihan Lokasi Impor (Google Sheets Style) -->
+                    <div class="card border rounded-3 p-3 bg-white mb-3">
+                        <label class="fw-bold text-dark small mb-2 d-block"><i class="fas fa-gear me-1 text-muted"></i> Lokasi Impor</label>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="importLocationOption" id="importOptReplace" value="replace" checked>
+                            <label class="form-check-label small" for="importOptReplace">
+                                <strong>Ganti spreadsheet saat ini</strong>
+                                <div class="text-muted extra-small">Menimpa seluruh lembar kerja saat ini dengan isi file Excel baru.</div>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="importLocationOption" id="importOptInsert" value="insert">
+                            <label class="form-check-label small" for="importOptInsert">
+                                <strong>Sisipkan sheet baru</strong>
+                                <div class="text-muted extra-small">Menambahkan tab lembar kerja dari file Excel ke spreadsheet yang ada tanpa menghapus data lama.</div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div id="import-progress-container" class="d-none mb-3">
+                        <div class="d-flex justify-content-between small text-muted mb-1">
+                            <span id="import-progress-status">Membaca format, warna, dan struktur sel...</span>
+                            <span id="import-progress-percent">0%</span>
+                        </div>
+                        <div class="progress" style="height: 6px;">
+                            <div id="import-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light border-top px-4 py-3">
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-3 rounded-pill" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" id="btn-do-import-xlsx" class="btn btn-success btn-sm px-4 rounded-pill fw-bold" onclick="window.executeImportXlsx()" disabled>
+                        <i class="fas fa-file-import me-1"></i>Impor data
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL GOVLENS OCR -->
+    <div class="modal fade" id="modalGovLensOCR" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content glass-card border-0">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <h5 class="fw-bold">GovLens AI Scanner</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"
+                        onclick="window.stopGovLensCamera()"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="nav nav-pills nav-fill bg-light rounded-pill p-1 mb-4" id="ocrTabs" role="tablist">
+                        <li class="nav-item">
+                            <button class="nav-link active rounded-pill fw-bold" id="camera-tab" data-bs-toggle="tab"
+                                data-bs-target="#tab-ocr-camera" onclick="window.startGovLensCamera()">Kamera</button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link rounded-pill fw-bold" id="file-tab" data-bs-toggle="tab"
+                                data-bs-target="#tab-ocr-file" onclick="window.stopGovLensCamera()">Upload File</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="tab-ocr-camera">
+                            <div class="bg-dark rounded-4 overflow-hidden mb-3 position-relative"
+                                style="height: 300px;">
+                                <video id="ocr-video-element" class="w-100 h-100 object-fit-cover" autoplay playsinline
+                                    muted></video>
+                                <canvas id="ocr-canvas-hidden" class="d-none"></canvas>
+                            </div>
+                            <div class="d-flex justify-content-center gap-2">
+                                <button onclick="window.captureGovLensCamera()"
+                                    class="btn btn-brand rounded-pill px-4"><i class="fas fa-camera me-2"></i>Ambil
+                                    Gambar</button>
+                                <button onclick="window.switchGovLensCamera()"
+                                    class="btn btn-light rounded-pill px-3 border"><i
+                                        class="fas fa-rotate me-2"></i>Tukar Kamera</button>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="tab-ocr-file">
+                            <input type="file" id="ocr-file-input" class="form-control form-control-lg bg-light"
+                                accept="image/*" onchange="window.handleGovLensFileUpload(event)">
+                        </div>
+                    </div>
+                    <div id="ocr-preview-container" class="d-none mt-4 border-top pt-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <strong class="text-brand">Hasil Ekstraksi AI:</strong>
+                            <span id="ocr-status-spinner" class="badge bg-warning text-dark d-none">Memproses...</span>
+                        </div>
+                        <div class="p-3 bg-light rounded-3 font-monospace small mb-3 border" id="ocr-extracted-text"
+                            style="max-height: 150px; overflow-y: auto;"></div>
+                        <button onclick="window.applyOCRTextToLuckysheet()"
+                            class="btn btn-success w-100 rounded-pill fw-bold">Masukkan ke Spreadsheet</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL LIVE VIEW ONLY -->
+    <div class="modal fade" id="modalLiveViewOnly" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content glass-card border-0 bg-dark text-white">
+                <div class="modal-header border-secondary border-opacity-25 py-3">
+                    <h5 class="fw-bold mb-0" id="peek-modal-staff-title">Live Monitor</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4 bg-body text-dark">
+                    <div
+                        class="d-flex justify-content-between align-items-center mb-4 bg-white p-3 rounded-4 shadow-sm border">
+                        <div class="d-flex align-items-center gap-3">
+                            <img id="peek-modal-avatar" src="" class="avatar-box rounded-circle" alt="Avatar">
+                            <div>
+                                <h6 class="fw-bold mb-0" id="peek-modal-name">Nama</h6>
+                                <small class="text-muted" id="peek-modal-nip">NIP</small>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <div class="badge bg-brand fs-6" id="peek-modal-active-cell">A1</div>
+                            <div class="text-muted small fw-bold mt-1">Hanya baca · pembaruan 15 detik</div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-4 shadow-sm border overflow-hidden mb-4">
+                        <div class="bg-light p-3 border-bottom">
+                            <div id="gm-peek-tabs" class="d-flex flex-wrap gap-2" role="group"
+                                aria-label="Tab lembar kerja staf"></div>
+                            <div id="gm-peek-source" class="small text-muted mt-2"></div>
+                            <div id="gm-peek-updated" class="small text-muted mt-1">Memuat data…</div>
+                        </div>
+                        <div id="gm-peek-scroll" class="p-0 overflow-auto" style="max-height: 440px;">
+                            <table class="table table-bordered table-sm mb-0 align-middle text-center"
+                                id="peek-modal-grid-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 40px;">#</th>
+                                        <th>A</th>
+                                        <th>B</th>
+                                        <th>C</th>
+                                        <th>D</th>
+                                        <th>E</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="peek-modal-grid-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-4"><button type="button" id="gm-peek-prev"
+                            class="btn btn-outline-secondary btn-sm">Baris sebelumnya</button><button type="button"
+                            id="gm-peek-next" class="btn btn-outline-secondary btn-sm">Baris berikutnya</button><button
+                            type="button" id="gm-peek-left" class="btn btn-outline-secondary btn-sm">Kolom
+                            sebelumnya</button><button type="button" id="gm-peek-right"
+                            class="btn btn-outline-secondary btn-sm">Kolom berikutnya</button><span id="gm-peek-page"
+                            class="small text-muted"></span></div>
+                    <div class="bg-white rounded-4 shadow-sm border p-3">
+                        <h6 class="fw-bold mb-3">Catatan Supervisor</h6>
+                        <div class="input-group mb-3">
+                            <input type="text" id="peek-supervisor-note-input" class="form-control bg-light"
+                                placeholder="Berikan arahan untuk staf ini...">
+                            <button onclick="window.sendSupervisorNote()" class="btn btn-warning fw-bold">Kirim
+                                Arahan</button>
+                        </div>
+                        <div id="peek-supervisor-notes-list" class="d-flex flex-column gap-2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL USER CRUD -->
+    <div class="modal fade" id="modalUser" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card border-0">
+                <div class="modal-header border-bottom-0">
+                    <h5 class="fw-bold" id="modalUserTitle">Form Staf</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="form-user-crud" onsubmit="window.saveUserCrud(event)">
+                        <input type="hidden" id="crud-user-id" value="">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Nama Lengkap</label>
+                            <input type="text" id="crud-nama" class="form-control bg-light" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">NIP</label>
+                            <input type="text" id="crud-nip" class="form-control bg-light">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Jabatan</label>
+                            <select id="crud-jabatan" class="form-select bg-light" required>
+                                <option value="Operator Layanan Operasional">Operator Layanan Operasional</option>
+                                <option value="Penata Layanan Operasional">Penata Layanan Operasional</option>
+                                <option value="Pengadministrasi Perkantoran">Pengadministrasi Perkantoran</option>
+                            </select>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6"><label class="form-label small fw-bold">Username</label><input
+                                    type="text" id="crud-username" class="form-control bg-light" required></div>
+                            <div class="col-6"><label class="form-label small fw-bold">Password</label><input
+                                    type="password" id="crud-password" class="form-control bg-light"></div>
+                        </div>
+                        <div class="row g-2 mb-4">
+                            <div class="col-6">
+                                <label class="form-label small fw-bold">Role</label>
+                                <select id="crud-role" class="form-select bg-light">
+                                    <option value="Staf">Staf</option>
+                                    <option value="Admin">Admin</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-bold">Foto</label>
+                                <input type="file" id="crud-foto-file" class="form-control bg-light" accept="image/*"
+                                    onchange="window.previewImageFile(event)">
+                            </div>
+                        </div>
+                        <div class="text-center mb-3" id="preview-foto-box" style="display:none;">
+                            <img id="preview-foto-img" src="" class="avatar-box rounded-circle mx-auto d-block"
+                                style="width:80px;height:80px;" alt="Preview">
+                        </div>
+                        <button type="submit" class="btn btn-brand w-100 rounded-pill py-2 fw-bold">Simpan Data
+                            Pegawai</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sub-Modul JavaScript GovMonitor Modular -->
+    <?!= include('Javascript_Auth'); ?>
+    <?!= include('Javascript_Sheets'); ?>
+    <?!= include('Javascript_App'); ?>
+    <?!= include('Javascript_Widgets'); ?>
+</body>
+</html>

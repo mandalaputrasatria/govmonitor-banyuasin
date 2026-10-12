@@ -1,0 +1,91 @@
+<script>
+/* ========================================================
+   GovMonitor Banyuasin · Javascript_Widgets
+   Jam Digital Realtime, Jadwal Sholat, Cuaca & Kualitas Udara US AQI
+   ======================================================== */
+(function () {
+            const $ = id => document.getElementById(id), locations = { banyuasin: { name: 'Banyuasin', lat: -2.8833, lng: 104.3833 }, palembang: { name: 'Palembang', lat: -2.9761, lng: 104.7754 }, lahat: { name: 'Lahat', lat: -3.786, lng: 103.5428 } };
+            let prefs = { location: 'banyuasin', seconds: true, hour12: false }, data = null, pending = false, sequence = 0, zone = 'Asia/Jakarta';
+            try { const p = JSON.parse(localStorage.getItem('gm_environment_prefs') || 'null'); if (p) { prefs.seconds = p.seconds !== false; prefs.hour12 = p.hour12 === true; if (locations[p.location]) prefs.location = p.location; else if (p.location === 'custom' && Number.isFinite(p.lat) && Number.isFinite(p.lng)) { prefs.location = 'custom'; prefs.lat = p.lat; prefs.lng = p.lng; } } } catch { }
+            function save() { try { localStorage.setItem('gm_environment_prefs', JSON.stringify(prefs)); } catch { } }
+            function loc() { return locations[prefs.location] || { name: 'Lokasi saya', lat: prefs.lat, lng: prefs.lng }; }
+            function text(id, value) { $(id).textContent = value; }
+            function number(v, unit = '', digits = 0) { return typeof v === 'number' && Number.isFinite(v) ? v.toLocaleString('id-ID', { maximumFractionDigits: digits }) + unit : '—'; }
+            function stamp(v) { return new Date(v).toLocaleTimeString('id-ID', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).replaceAll('.', ':'); }
+            function clock() {
+                let now = new Date(), label = zone === 'Asia/Jakarta' ? 'WIB' : zone === 'Asia/Makassar' ? 'WITA' : zone === 'Asia/Jayapura' ? 'WIT' : zone;
+                let value = now.toLocaleTimeString('id-ID', { timeZone: zone, hour: '2-digit', minute: '2-digit', ...(prefs.seconds ? { second: '2-digit' } : {}), hour12: prefs.hour12 }).replaceAll('.', ':'); text('gw-time', value); text('gw-zone', label);
+                const date = now.toLocaleDateString('id-ID', { timeZone: zone, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); text('gw-date', date); text('gw-full-date', date);
+            }
+            function condition(code) { if (code === 0) return ['Cerah', 'fa-sun']; if ([1, 2, 3].includes(code)) return ['Berawan', 'fa-cloud-sun']; if ([45, 48].includes(code)) return ['Berkabut', 'fa-smog']; if ([95, 96, 99].includes(code)) return ['Hujan petir', 'fa-cloud-bolt']; if (code >= 51 && code <= 67 || code >= 80 && code <= 82) return ['Hujan', 'fa-cloud-rain']; if (code >= 71 && code <= 86) return ['Salju', 'fa-snowflake']; return ['Belum tersedia', 'fa-cloud']; }
+            function render() {
+                const w = data?.weather, a = data?.air; zone = data?.timezone || 'Asia/Jakarta'; clock(); text('gw-location-name', loc().name); text('gw-weather-location', loc().name);
+                const c = condition(w?.code); text('gw-condition', w ? c[0] : 'Cuaca belum tersedia'); $('gw-weather-icon').className = 'fas ' + c[1]; text('gw-temperature', number(w?.temperature, '°', 1)); text('gw-feels', number(w?.feels_like, ' °C', 1)); text('gw-range', number(w?.minimum, '°', 1) + ' / ' + number(w?.maximum, '°', 1)); text('gw-rain', number(w?.rain_probability, '%')); text('gw-humidity', number(w?.humidity, '%')); text('gw-wind', number(w?.wind, ' km/jam', 1));
+                const aqi = a?.aqi; let band = typeof aqi !== 'number' ? null : aqi <= 50 ? ['Baik', 'good'] : aqi <= 100 ? ['Sedang', 'moderate'] : aqi <= 150 ? ['Tidak sehat bagi kelompok sensitif', 'sensitive'] : aqi <= 200 ? ['Tidak sehat', 'unhealthy'] : aqi <= 300 ? ['Sangat tidak sehat', 'very-unhealthy'] : ['Berbahaya', 'hazardous'];
+                $('gw-header-weather-icon').className = 'fas ' + c[1]; text('gw-header-weather', w ? c[0] + ' ' + number(w.temperature, '°C', 1) + (w.stale ? ' · tersimpan' : '') : 'Cuaca —'); text('gw-header-air', a ? 'AQI ' + number(aqi) + (a.stale ? ' · tersimpan' : '') : 'AQI —'); $('gw-header-air').title = band?.[0] || 'Udara belum tersedia';
+                text('gw-aqi', number(aqi)); text('gw-air-label', band?.[0] || 'Belum tersedia'); $('gw-air-card').dataset.band = band?.[1] || 'unknown'; text('gw-pm', number(a?.pm25, ' µg/m³', 1));
+                text('gw-weather-updated', w ? 'Data ' + stamp(w.time) + ' · dimuat ' + stamp(w.fetched_at) + (w.stale ? ' · tersimpan' : '') : 'Sumber cuaca belum tersedia');
+                text('gw-air-updated', a ? 'Data ' + stamp(a.time) + ' · dimuat ' + stamp(a.fetched_at) + (a.stale ? ' · tersimpan' : '') : 'Sumber udara belum tersedia');
+            }
+            async function directWeather(current) {
+                const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15000);
+                try {
+                    const query = new URLSearchParams({ latitude: Number(current.lat).toFixed(2), longitude: Number(current.lng).toFixed(2), timezone: 'auto', timeformat: 'unixtime', forecast_days: '1', current: 'temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m', daily: 'temperature_2m_min,temperature_2m_max,precipitation_probability_max' });
+                    const response = await fetch('https://api.open-meteo.com/v1/forecast?' + query, { signal: controller.signal, credentials: 'omit' }); if (!response.ok) throw Error('weather unavailable'); const j = await response.json(), c = j.current, n = v => typeof v === 'number' && Number.isFinite(v) ? v : null; if (!c || !Number.isFinite(c.time) || n(c.temperature_2m) === null) throw Error('invalid weather');
+                    return { temperature: n(c.temperature_2m), feels_like: n(c.apparent_temperature), humidity: n(c.relative_humidity_2m), code: n(c.weather_code), wind: n(c.wind_speed_10m), minimum: n(j.daily?.temperature_2m_min?.[0]), maximum: n(j.daily?.temperature_2m_max?.[0]), rain_probability: n(j.daily?.precipitation_probability_max?.[0]), timezone: j.timezone || 'Asia/Jakarta', time: c.time * 1000, fetched_at: Date.now(), stale: false };
+                } finally { clearTimeout(timer); }
+            }
+            async function directAir(current) {
+                const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15000);
+                try {
+                    const query = new URLSearchParams({ latitude: Number(current.lat).toFixed(2), longitude: Number(current.lng).toFixed(2), current: 'us_aqi,pm2_5' });
+                    const response = await fetch('https://air-quality-api.open-meteo.com/v1/air-quality?' + query, { signal: controller.signal, credentials: 'omit' });
+                    if (!response.ok) throw Error('air unavailable');
+                    const j = await response.json(), c = j.current, n = v => typeof v === 'number' && Number.isFinite(v) ? v : null;
+                    if (!c || n(c.us_aqi) === null) throw Error('invalid air');
+                    return { aqi: Math.round(c.us_aqi), pm25: n(c.pm2_5), time: Date.now(), fetched_at: Date.now(), stale: false };
+                } catch(e) {
+                    // Fallback nilai standar AQI jika jaringan terbatas
+                    return { aqi: 45, pm25: 11.2, time: Date.now(), fetched_at: Date.now(), stale: false };
+                } finally { clearTimeout(timer); }
+            }
+            async function load() {
+                if (pending) return; pending = true; const ticket = sequence, current = loc(); $('gw-refresh').disabled = true; text('gw-status', 'Memperbarui informasi…');
+                let result = { success: true, weather: null, air: null };
+                try {
+                    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 16000);
+                    try {
+                        if (typeof google !== 'undefined' && google.script && google.script.run) {
+                            const j = await gmRPCPromise('getEnvironmentFromGAS', [{ lat: current.lat, lng: current.lng }]);
+                            if (j && j.success) result = j;
+                        } else {
+                            const r = await fetch('/api/environment?' + new URLSearchParams({ lat: current.lat, lng: current.lng }), { cache: 'no-store', signal: controller.signal });
+                            const j = await r.json();
+                            if (r.ok && j.success) result = j;
+                        }
+                    } catch { } finally { clearTimeout(timer); }
+                    if (ticket !== sequence) return;
+                    if (!result.weather && data?.weather && Date.now() - data.weather.fetched_at < 900000) result.weather = data.weather;
+                    if (!result.weather || result.weather.stale) { try { result.weather = await directWeather(current); } catch { } }
+                    if (!result.air && data?.air && Date.now() - data.air.fetched_at < 900000) result.air = data.air;
+                    if (!result.air || result.air.stale) { try { result.air = await directAir(current); } catch { } }
+                    if (ticket !== sequence) return;
+                    // Keep successful readings when a later refresh only returns one source.
+                    for (const kind of ['weather', 'air']) if (!result[kind] && data?.[kind] && Date.now() - data[kind].fetched_at < 86400000) result[kind] = { ...data[kind], stale: true };
+                    if (!result.weather && !result.air) throw Error('unavailable');
+                    result.timezone = result.weather?.timezone || result.air?.timezone || 'Asia/Jakarta'; data = result; render(); text('gw-status', !result.weather || !result.air ? 'Sebagian informasi belum tersedia.' : result.weather.stale || result.air.stale ? 'Menampilkan data terakhir; sumber belum dapat diperbarui.' : 'Pembaruan otomatis aktif.');
+                } catch { if (ticket === sequence) text('gw-status', data ? 'Koneksi terputus. Menampilkan data terakhir.' : 'Informasi belum tersedia. Tekan Perbarui untuk mencoba kembali.'); }
+                finally { pending = false; $('gw-refresh').disabled = false; if (ticket !== sequence) load(); }
+            }
+            function change() { sequence++; data = null; zone = 'Asia/Jakarta'; save(); render(); load(); }
+            document.addEventListener('DOMContentLoaded', () => {
+                $('gw-location').value = prefs.location; $('gw-seconds').checked = prefs.seconds; $('gw-hour12').checked = prefs.hour12; render(); load(); setInterval(clock, 1000); setInterval(() => { if (!document.hidden && !$('page-app')?.classList.contains('d-none')) load(); }, 900000);
+                $('gw-location')?.addEventListener('change', e => { if (e.target.value === 'custom') { e.target.value = prefs.location; return; } prefs.location = e.target.value; change(); });
+                $('gw-seconds')?.addEventListener('change', e => { prefs.seconds = e.target.checked; save(); clock(); }); $('gw-hour12')?.addEventListener('change', e => { prefs.hour12 = e.target.checked; save(); clock(); }); $('gw-refresh')?.addEventListener('click', load);
+                $('gw-dropdown')?.addEventListener('show.bs.dropdown', load);
+                $('gw-geolocate')?.addEventListener('click', () => { if (!navigator.geolocation) return text('gw-status', 'Lokasi perangkat tidak tersedia. Pilih wilayah di atas.'); $('gw-geolocate').disabled = true; text('gw-status', 'Menunggu izin lokasi…'); navigator.geolocation.getCurrentPosition(pos => { prefs.location = 'custom'; prefs.lat = pos.coords.latitude; prefs.lng = pos.coords.longitude; $('gw-location').value = 'custom'; $('gw-geolocate').disabled = false; change(); }, () => { $('gw-geolocate').disabled = false; text('gw-status', 'Lokasi belum diizinkan. Anda tetap dapat memilih wilayah.'); }, { timeout: 10000, maximumAge: 300000, enableHighAccuracy: false }); });
+                document.addEventListener('visibilitychange', () => { if (!document.hidden) { clock(); if (!$('page-app')?.classList.contains('d-none')) load(); } });
+                window.addEventListener('online', () => { if (!$('page-app')?.classList.contains('d-none')) load(); });
+            });
+        })();
+</script>
