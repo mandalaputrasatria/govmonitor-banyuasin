@@ -31,9 +31,9 @@ echo 4. Memperbarui website live di branch gh-pages...
 node -e "
 const fs = require('fs');
 let html = fs.readFileSync('Index.html', 'utf8');
-const mockBoot = { success: true, version: '2026.10.07-gh-pages', deployment_url: '', timezone: 'Asia/Jakarta', archive_token: '' };
-html = html.replace(/<script id=\"gm-boot-data\" type=\"application\/json\">[\s\S]*?<\/script>/, '<script id=\"gm-boot-data\" type=\"application/json\">' + JSON.stringify(mockBoot) + '</script>');
-html = html.replace(/<\?!=?\s*bootJson\s*\?>/g, JSON.stringify(mockBoot));
+const liveBoot = { success: true, version: '2026.10.07-live', deployment_url: 'https://script.google.com/macros/s/AKfycbwfOAV8tI1Ue6EBLehOvE-WgduT7CACvfb6VUXRyJWXBtnfi-QFAGmP7G_uCffhMLLJ/exec', spreadsheet_id: '1SgaDigEUmYCLMfXPysWDxI243RgZlbws6fozC9xXF9M', timezone: 'Asia/Jakarta', archive_token: '' };
+html = html.replace(/<(?:div|script) id=\"gm-boot-data\"[^>]*>[\s\S]*?<\/(?:div|script)>/, '<script id=\"gm-boot-data\" type=\"application/json\">' + JSON.stringify(liveBoot) + '</script>');
+html = html.replace(/<\?!=?\s*bootJson\s*\?>/g, JSON.stringify(liveBoot));
 html = html.replace(/<\?!=\s*include\(['\"]([^'\"]+)['\"]\)\s*;?\s*\?>/g, (m, f) => fs.existsSync(f + '.html') ? fs.readFileSync(f + '.html', 'utf8') : '');
 fs.writeFileSync('bundle_temp.html', html, 'utf8');
 "
