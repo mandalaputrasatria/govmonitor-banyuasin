@@ -9,6 +9,12 @@
         });
 
         var GM_LOGO = window.GM_LOGO || (document.getElementById('gm-logo-data') ? document.getElementById('gm-logo-data').textContent.trim() : "https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg");
+        if (typeof window.fetchUsersFromGAS === 'undefined') {
+            window.fetchUsersFromGAS = function() { console.log('[GovMonitor] fetchUsersFromGAS stub ready'); };
+        }
+        if (typeof window.fetchAuditLogsFromGAS === 'undefined') {
+            window.fetchAuditLogsFromGAS = function() { console.log('[GovMonitor] fetchAuditLogsFromGAS stub ready'); };
+        }
         let currentUser = null;
         let fallbackSheets = [], watchTimer = null, heartbeatTimer = null, monitorTimer = null, monitorBusy = false, lastFingerprint = '', lastUserInput = Date.now(), reportLogs = [], reportRequest = 0;
         let isSpeechRecording = false;
@@ -232,7 +238,19 @@
             }
             currentUser = user; delete currentUser.password;
             if (IS_GAS) { staffList = []; auditLogsData = []; mockChatStore = {}; }
-            clearLoginBusy(); renderAppView(); fetchUsersFromGAS(); fetchAuditLogsFromGAS(); try { gpOnLogin(); } catch(e) { console.warn("gpOnLogin safe:", e.message); } gmStartIdle(meta); startWorkMonitoring();
+            clearLoginBusy();
+            renderAppView();
+            try {
+                if (typeof fetchUsersFromGAS === 'function') fetchUsersFromGAS();
+                else if (typeof window.fetchUsersFromGAS === 'function') window.fetchUsersFromGAS();
+            } catch(e) { console.warn('fetchUsersFromGAS safe:', e.message); }
+            try {
+                if (typeof fetchAuditLogsFromGAS === 'function') fetchAuditLogsFromGAS();
+                else if (typeof window.fetchAuditLogsFromGAS === 'function') window.fetchAuditLogsFromGAS();
+            } catch(e) { console.warn('fetchAuditLogsFromGAS safe:', e.message); }
+            try { gpOnLogin(); } catch(e) { console.warn("gpOnLogin safe:", e.message); }
+            try { gmStartIdle(meta); } catch(e) { console.warn("gmStartIdle safe:", e.message); }
+            try { startWorkMonitoring(); } catch(e) { console.warn("startWorkMonitoring safe:", e.message); }
             if (IS_GAS) $('#btn-toggle-sim').addClass('d-none'); else $('#btn-toggle-sim').removeClass('d-none');
         }
         async function handleLogin(e) {
