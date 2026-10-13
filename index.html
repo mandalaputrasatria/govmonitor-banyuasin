@@ -4183,7 +4183,7 @@
 <body class="theme-banyuasin">
     <!-- Boot Data & Logo Data -->
     <div id="gm-logo-data" style="display:none">https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg</div>
-    <script id="gm-boot-data" type="application/json">{"success":true,"version":"2026.10.07-live","deployment_url":"https://script.google.com/macros/s/AKfycbwfOAV8tI1Ue6EBLehOvE-WgduT7CACvfb6VUXRyJWXBtnfi-QFAGmP7G_uCffhMLLJ/exec","spreadsheet_id":"1SgaDigEUmYCLMfXPysWDxI243RgZlbws6fozC9xXF9M","timezone":"Asia/Jakarta","archive_token":""}</script>
+    <script id="gm-boot-data" type="application/json">{"success":true,"version":"2026.10.13-live","deployment_url":"https://script.google.com/macros/s/AKfycbwfOAV8tI1Ue6EBLehOvE-WgduT7CACvfb6VUXRyJWXBtnfi-QFAGmP7G_uCffhMLLJ/exec","spreadsheet_id":"1SgaDigEUmYCLMfXPysWDxI243RgZlbws6fozC9xXF9M","timezone":"Asia/Jakarta","archive_token":""}</script>
 
     <!-- Error Banner Global -->
     <div id="gm-load-error" class="alert alert-danger m-3 fw-bold" style="display:none;position:fixed;top:10px;left:10px;right:10px;z-index:999999;box-shadow:0 8px 30px rgba(0,0,0,0.3);border-radius:12px;"></div>
@@ -4631,7 +4631,7 @@
 
         <div id="view-staff-workspace" class="d-none" style="position: relative; height: calc(100vh - 60px);">
 
-                        <!-- GovDikte 2.0: Dynamic Capsule Minimalis (Floating Island) -->
+            <!-- GovDikte 2.0: Dynamic Capsule Minimalis (Floating Island) -->
             <section id="gov-dikte-panel" class="gd-capsule-container d-none" aria-label="GovDikte 2.0 Dynamic Capsule">
                 <div class="gd-capsule" id="gd-drag-handle">
                     <!-- 1. Tombol Mikrofon Utama dengan Efek Glow Denyut -->
@@ -5840,6 +5840,12 @@
         });
 
         var GM_LOGO = window.GM_LOGO || (document.getElementById('gm-logo-data') ? document.getElementById('gm-logo-data').textContent.trim() : "https://lh3.googleusercontent.com/d/1wyme0yvOov03zrgiUVk8gwp3dswje7Dg");
+        if (typeof window.fetchUsersFromGAS === 'undefined') {
+            window.fetchUsersFromGAS = function() { console.log('[GovMonitor] fetchUsersFromGAS stub ready'); };
+        }
+        if (typeof window.fetchAuditLogsFromGAS === 'undefined') {
+            window.fetchAuditLogsFromGAS = function() { console.log('[GovMonitor] fetchAuditLogsFromGAS stub ready'); };
+        }
         let currentUser = null;
         let fallbackSheets = [], watchTimer = null, heartbeatTimer = null, monitorTimer = null, monitorBusy = false, lastFingerprint = '', lastUserInput = Date.now(), reportLogs = [], reportRequest = 0;
         let isSpeechRecording = false;
@@ -6063,7 +6069,19 @@
             }
             currentUser = user; delete currentUser.password;
             if (IS_GAS) { staffList = []; auditLogsData = []; mockChatStore = {}; }
-            clearLoginBusy(); renderAppView(); fetchUsersFromGAS(); fetchAuditLogsFromGAS(); try { gpOnLogin(); } catch(e) { console.warn("gpOnLogin safe:", e.message); } gmStartIdle(meta); startWorkMonitoring();
+            clearLoginBusy();
+            renderAppView();
+            try {
+                if (typeof fetchUsersFromGAS === 'function') fetchUsersFromGAS();
+                else if (typeof window.fetchUsersFromGAS === 'function') window.fetchUsersFromGAS();
+            } catch(e) { console.warn('fetchUsersFromGAS safe:', e.message); }
+            try {
+                if (typeof fetchAuditLogsFromGAS === 'function') fetchAuditLogsFromGAS();
+                else if (typeof window.fetchAuditLogsFromGAS === 'function') window.fetchAuditLogsFromGAS();
+            } catch(e) { console.warn('fetchAuditLogsFromGAS safe:', e.message); }
+            try { gpOnLogin(); } catch(e) { console.warn("gpOnLogin safe:", e.message); }
+            try { gmStartIdle(meta); } catch(e) { console.warn("gmStartIdle safe:", e.message); }
+            try { startWorkMonitoring(); } catch(e) { console.warn("startWorkMonitoring safe:", e.message); }
             if (IS_GAS) $('#btn-toggle-sim').addClass('d-none'); else $('#btn-toggle-sim').removeClass('d-none');
         }
         async function handleLogin(e) {
@@ -6278,1107 +6296,34 @@
             recordCellAuditLog(cellCoord, prevValStr, text, method, 0);
         }
 
-                /* GOVDIKTE_CORE_START */
+        /* GOVDIKTE_CORE_START */
         const GovDikteCore = (() => {
-            function coordinate(r, c) { let s = ''; for (let n = c + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s; return s + (r + 1); }
+            function coordinate(r, c) { let s = ''; for (let n = c + 1; n > 0; n = Math.floor((n - 1) / 26))s = String.fromCharCode(65 + (n - 1) % 26) + s; return s + (r + 1); }
             function address(s) { const m = String(s).toUpperCase().replace(/\s+/g, '').match(/^([A-Z]+)([1-9]\d*)$/); if (!m) return null; let c = 0; for (const ch of m[1]) c = c * 26 + ch.charCodeAt(0) - 64; const r = Number(m[2]) - 1; if (r > 9999 || c > 200) return null; return { r, c: c - 1 }; }
-            
             function formatBureaucracy(text) {
-                if (!text) return '';
-                let s = String(text).trim();
-                
-                // Format Nomor Surat Kedinasan: "nomor 090 garis miring 045..." -> "No. 090/045/..."
-                s = s.replace(/\b(?:nomor|no\.?)\s+(\d+)\s*(?:garis miring|\/)\s*([a-zA-Z0-9]+)/gi, 'No. $1/$2');
-                s = s.replace(/\s*(?:garis miring|\/)\s*/gi, '/');
-                s = s.replace(/\bnomor\s+(\d+)/gi, 'No. $1');
-                
-                // Format Rupiah: "10 juta rupiah" -> "Rp 10.000.000"
-                s = s.replace(/(\d+)\s*juta\s*rupiah/gi, (_, n) => 'Rp ' + (Number(n) * 1000000).toLocaleString('id-ID'));
-                s = s.replace(/(\d+)\s*ribu\s*rupiah/gi, (_, n) => 'Rp ' + (Number(n) * 1000).toLocaleString('id-ID'));
-                s = s.replace(/(\d+)\s*rupiah/gi, (_, n) => 'Rp ' + Number(n).toLocaleString('id-ID'));
-                s = s.replace(/\brupiah\s*(\d+)/gi, (_, n) => 'Rp ' + Number(n).toLocaleString('id-ID'));
-
-                // Format Bulan:
-                s = s.replace(/\b(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)\b/gi, 
-                    m => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase());
-
-                // Singkatan Resmi Birokrasi Pemkab Banyuasin
-                const abbrevs = ['UMKM', 'APBD', 'PAD', 'SPJ', 'KTP', 'NIP', 'OPD', 'BANYUASIN', 'DISKOPERINDAG', 'KOP', 'SK', 'BAST', 'SPPD', 'BAPEDA', 'BKPSDM', 'DPRD', 'PTSP', 'UPTD', 'WIB'];
-                abbrevs.forEach(abbr => {
-                    const reg = new RegExp('\\b' + abbr + '\\b', 'gi');
-                    s = s.replace(reg, abbr);
+                let t = String(text || '');
+                t = t.replace(/\bnomor\s+(\d+)/gi, 'No. $1');
+                t = t.replace(/\bgaris\s+miring\b/gi, '/');
+                t = t.replace(/\btitik\b/gi, '.');
+                t = t.replace(/\bkoma\b/gi, ',');
+                t = t.replace(/\b(?:rupiah|rp)\s*([\d\.,]+)/gi, 'Rp $1');
+                const acr = ['UMKM', 'APBD', 'PAD', 'SPJ', 'NIP', 'KTP', 'KK', 'OPD', 'ASN', 'PNS', 'PPPK', 'BANYUASIN', 'DISKOPERINDAG'];
+                acr.forEach(w => {
+                    t = t.replace(new RegExp('\\b' + w + '\\b', 'gi'), w);
                 });
-
-                // Tanda Baca Suara
-                s = s.replace(/\s+titik\b/gi, '.');
-                s = s.replace(/\s+koma\b/gi, ',');
-                s = s.replace(/\s+tanda seru\b/gi, '!');
-                s = s.replace(/\s+tanda tanya\b/gi, '?');
-
-                return s;
+                return t;
             }
-
             function command(s) {
                 const text = String(s).toLowerCase().trim().replace(/[.,!?]+$/, '').replace(/\s+/g, ' ');
                 const m = text.match(/^(?:pindah ke sel|ke sel|pindah ke)\s+(.+)$/);
-                if (m) { 
-                    let to = m[1].replace(/^(ce|si)\s+/, 'c ').replace(/^be\s+/, 'b ').replace(/^de\s+/, 'd '); 
-                    const words = ['nol', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh']; 
-                    for (let i = 1; i < words.length; i++) to = to.replace(new RegExp('\\b' + words[i] + '
-
-        /* GOVDIKTE_CONTROLLER_START */
-        const gd = { target: null, owner: null, stream: null, context: null, analyser: null, source: null, frame: 0, epoch: 0, starting: false, listening: false, commandMode: false, busy: false, undo: [], startedAt: 0, duration: 0, seen: new Set(), status: 'Siap mendengarkan' };
-        function gdEl(id) { return document.getElementById(id); }
-        function gdMessage(text, kind = 'info') { const e = gdEl('gd-message'); e.textContent = text; e.dataset.kind = kind; }
-        function gdDraft() { return gdEl('gd-preview').value; }
-        function gdSetDraft(text) { gdEl('gd-preview').value = text; speechBuffer = text; updateDiktePreview(); }
-        function gdState(state, text) { const p = gdEl('gov-dikte-panel'); p.dataset.state = state; gdEl('gd-state-text').textContent = text; gd.status = text; }
-        function updateDiktePreview() {
-            speechBuffer = gdDraft(); const has = !!speechBuffer.trim(); gdEl('gd-char-count').textContent = speechBuffer.length + ' karakter';
-            gdEl('gd-insert').disabled = !has || gd.busy; gdEl('gd-append').disabled = !has || gd.busy; gdEl('gd-undo').disabled = !gd.undo.length || gd.busy;
-        }
-        function gdCurrentTarget() {
-            const pos = getActiveCellPosition(); let sheet = null;
-            if (isLuckysheetLoaded) sheet = luckysheet.getSheet();
-            return { ...pos, sheetIndex: sheet?.index ?? null, sheetName: sheet?.name || 'lembar_kerja 1', order: Number(sheet?.order || 0), fallback: !isLuckysheetLoaded };
-        }
-        function gdResolveTarget(target) {
-            if (!target) throw new Error('Pilih dan kunci sel tujuan terlebih dahulu.');
-            if (!gmCanWriteWorkbook()) throw new Error('Kendali edit belum tersedia.');
-            if (gd.owner !== currentUser?.user_id) throw new Error('Sesi pengguna berubah. Buka ulang panel dikte.');
-            if (target.fallback) { if (isLuckysheetLoaded) throw new Error('Mode editor berubah. Kunci kembali sel tujuan.'); return target; }
-            if (!isLuckysheetLoaded) throw new Error('Editor lembar kerja belum tersedia.');
-            const sheet = (luckysheet?.getAllSheets?.() || []).find(s => target.sheetIndex != null ? String(s.index) === String(target.sheetIndex) : s.name === target.sheetName);
-            if (!sheet) throw new Error('Tab tujuan sudah dihapus atau diganti. Kunci kembali sel tujuan.');
-            return { ...target, order: Number(sheet.order), sheetName: sheet.name };
-        }
-        function gdRenderTarget() { if (!gd.target) return; gdEl('gd-target-coordinate').textContent = GovDikteCore.coordinate(gd.target.r, gd.target.c); gdEl('gd-target-sheet').textContent = gd.target.sheetName; $('#dikte-target-cell').text(GovDikteCore.coordinate(gd.target.r, gd.target.c)); }
-        function captureDikteTarget() {
-            if (gd.starting || gd.listening || gd.busy) return gdMessage('Jeda dikte sebelum mengganti sel tujuan.', 'error');
-            if (gdDraft().trim()) return gdMessage('Masukkan atau batalkan pratinjau dahulu sebelum mengganti target.', 'error');
-            try { gd.target = gdCurrentTarget(); gd.owner = currentUser?.user_id; gdRenderTarget(); gdMessage('Target terkunci. Klik sel lain tidak mengubah tujuan dikte.'); } catch (e) { gdMessage(e.message, 'error'); }
-        }
-        function openDiktePanel() {
-            if (!gmCanWriteWorkbook()) return;
-            const panel = gdEl('gov-dikte-panel'); 
-            if (panel) panel.classList.remove('d-none');
-            if (gd.owner !== currentUser?.user_id) { gd.undo = []; gd.target = null; gdSetDraft(''); gd.owner = currentUser?.user_id; }
-            if (!gd.target) captureDikteTarget(); 
-            updateDiktePreview();
-            if (!gd.listening && !gd.starting) startDikteRecording();
-        }
-        
-        function toggleDikteRecording() {
-            if (gd.listening || gd.starting) pauseDikteRecording();
-            else startDikteRecording();
-        }
-        function focusDikteInput() {
-            const inp = gdEl('gd-preview');
-            if (inp) inp.focus();
-        }
-        function toggleDikteCheatSheet() {
-            const d = gdEl('gd-cheatsheet-drawer');
-            if (d) d.classList.toggle('d-none');
-        }
-
-        function toggleSpeechRecognition() { if (gd.listening || gd.starting) pauseDikteRecording(); else openDiktePanel(); }
-        function minimizeDiktePanel() { const panel = gdEl('gov-dikte-panel'); panel.classList.toggle('gd-mini'); gdEl('gd-minimize').setAttribute('aria-label', panel.classList.contains('gd-mini') ? 'Perluas panel' : 'Ringkas panel'); gdClampPosition(); }
-        function closeDiktePanel() { pauseDikteRecording(); gdEl('gov-dikte-panel').classList.add('d-none'); gdEl('btn-stt-fab').focus(); }
-                function gdButtons() {
-            const rec = gdEl('gd-record'); if (rec) rec.disabled = gd.starting || gd.busy;
-            const recLbl = gdEl('gd-record-label'); if (recLbl) recLbl.textContent = gd.starting ? 'Meminta izin...' : gd.duration ? 'Lanjutkan dikte' : 'Mulai dikte';
-            const pause = gdEl('gd-pause'); if (pause) pause.disabled = !gd.listening && !gd.starting;
-            const useAct = gdEl('gd-use-active'); if (useAct) useAct.disabled = gd.starting || gd.listening || gd.busy;
-            const prev = gdEl('gd-preview'); if (prev) prev.readOnly = gd.starting || gd.listening;
-            const cmdMode = gdEl('gd-command-mode'); if (cmdMode) cmdMode.disabled = gd.starting || gd.listening || gd.busy;
-            updateDiktePreview();
-        }
-        function gdCanvas() {
-            const canvas = gdEl('gd-wave-canvas'), dpr = Math.min(window.devicePixelRatio || 1, 2); const width = Math.max(100, canvas.getBoundingClientRect().width || 360), height = 76;
-            if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) { canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr); }
-            const ctx = canvas.getContext('2d'); if (!ctx) return null; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); return { ctx, width, height };
-        }
-        function gdDrawWave(bytes) {
-            const surface = gdCanvas(); if (!surface) return; const { ctx, width, height } = surface; ctx.clearRect(0, 0, width, height);
-            ctx.strokeStyle = '#263b50'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, height / 2); ctx.lineTo(width, height / 2); ctx.stroke();
-            if (!bytes) return;
-            const gradient = ctx.createLinearGradient(0, 0, width, 0); gradient.addColorStop(0, '#42d1bd'); gradient.addColorStop(.52, '#78b6f5'); gradient.addColorStop(1, '#a68ced');
-            ctx.strokeStyle = gradient; ctx.lineWidth = 1.7; ctx.shadowBlur = 8; ctx.shadowColor = '#6fcbdb66'; ctx.beginPath();
-            const step = Math.max(1, Math.floor(bytes.length / width));
-            for (let i = 0; i < bytes.length; i += step) { const x = i / (bytes.length - 1) * width; const amplitude = Math.max(-1, Math.min(1, (bytes[i] - 128) / 128 * 2.8)); const y = height / 2 - amplitude * (height / 2 - 5); if (!i) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
-            ctx.stroke(); ctx.shadowBlur = 0;
-        }
-        function gdDrawIdle() { if (!gd.listening) gdDrawWave(null); }
-        function gdWaveFrame() {
-            if (!gd.listening || !gd.analyser) return;
-            const samples = new Uint8Array(gd.analyser.fftSize); gd.analyser.getByteTimeDomainData(samples); gdDrawWave(samples);
-            const value = GovDikteCore.signal(samples); 
-            const fill = gdEl('gd-level-fill'); if (fill) fill.style.width = value.percent + '%';
-            const meter = gdEl('gd-level-meter'); if (meter) meter.setAttribute('aria-valuenow', Math.round(value.percent));
-            const lvlTxt = gdEl('gd-level-text'); if (lvlTxt) lvlTxt.textContent = Math.round(value.db) + ' dBFS';
-            const caption = gdEl('gd-wave-caption'); if (caption) caption.textContent = value.peak > .96 ? 'Sinyal terlalu kuat' : value.rms > .008 ? 'Sinyal suara masuk' : 'Menunggu suara...';
-            const timeEl = gdEl('gd-time');
-            if (timeEl) {
-                const seconds = Math.floor((gd.duration + Date.now() - gd.startedAt) / 1000);
-                timeEl.textContent = String(Math.floor(seconds / 60)).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0');
-            }
-            gd.frame = requestAnimationFrame(gdWaveFrame);
-        }
-        function gdReleaseAudio() {
-            cancelAnimationFrame(gd.frame); gd.frame = 0;
-            if (gd.stream) gd.stream.getTracks().forEach(t => t.stop()); gd.stream = null;
-            try { gd.source?.disconnect(); gd.analyser?.disconnect(); } catch (e) { }
-            gd.source = null; gd.analyser = null; const context = gd.context; gd.context = null; if (context) context.close().catch(() => { });
-            const fill = gdEl('gd-level-fill'); if (fill) fill.style.width = '0%';
-            const meter = gdEl('gd-level-meter'); if (meter) meter.setAttribute('aria-valuenow', '0');
-            const lvl = gdEl('gd-level-text'); if (lvl) lvl.textContent = '— dB';
-            const cap = gdEl('gd-wave-caption'); if (cap) cap.textContent = 'Mikrofon dimatikan';
-            gdDrawIdle();
-        }
-        async function startDikteRecording() {
-            if (typeof gpAudio !== 'undefined' && !gpAudio.paused) return gdMessage('Hentikan audio azan sebelum mulai dikte.', 'error');
-            if (gd.starting || gd.listening || gd.busy) return;
-            if (!gd.target) captureDikteTarget();
-            try { gd.target = gdResolveTarget(gd.target); gdRenderTarget(); } catch (e) { return gdMessage(e.message, 'error'); }
-            if (!navigator.mediaDevices?.getUserMedia) { gdState('error', 'Mikrofon tidak tersedia'); return gdMessage('Akses mikrofon memerlukan HTTPS dan izin browser. Anda tetap dapat mengisi pratinjau manual.', 'error'); }
-            const epoch = ++gd.epoch; gd.starting = true; gdState('starting', 'Menunggu izin mikrofon'); gdButtons();
-            try {
-                const Audio = window.AudioContext || window.webkitAudioContext; if (!Audio) throw new Error('Browser tidak mendukung visual gelombang Web Audio.');
-                gd.context = new Audio(); await gd.context.resume();
-                if (epoch !== gd.epoch) return;
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
-                if (epoch !== gd.epoch) { stream.getTracks().forEach(t => t.stop()); return; }
-                gd.stream = stream; gd.source = gd.context.createMediaStreamSource(stream); gd.analyser = gd.context.createAnalyser(); gd.analyser.fftSize = 1024; gd.source.connect(gd.analyser);
-                gd.starting = false; gd.listening = true; isSpeechRecording = true; gd.startedAt = Date.now(); gd.seen = new Set();
-                $('#btn-stt-fab').addClass('recording'); $('#luckysheet-wrapper').addClass('dikte-sheet-glow'); gdState('listening', 'Mendengarkan'); gdButtons(); gdWaveFrame();
-                const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (!Speech) { gdState('listening', 'Uji mikrofon aktif'); gdMessage('Gelombang mengikuti suara. Transkripsi tidak tersedia di browser ini; jeda lalu isi pratinjau manual.', 'error'); return; }
-                const rec = new Speech(); recognitionEngine = rec; rec.lang = 'id-ID'; rec.continuous = true; rec.interimResults = true;
-                rec.onresult = event => {
-                    if (epoch !== gd.epoch) return;
-                    let interim = '';
-                    for (let i = event.resultIndex; i < event.results.length; i++) {
-                        if (epoch !== gd.epoch) break;
-                        const result = event.results[i];
-                        if (result.isFinal) { if (!gd.seen.has(i)) { gd.seen.add(i); handleVoiceCommandAndAppend(result[0].transcript); } }
-                        else interim += result[0].transcript + ' ';
-                    }
-                    const interimEl = gdEl('gd-interim');
-                    if (interimEl) interimEl.textContent = interim ? ('Mengenali: ' + interim) : '';
-                };
-                rec.onerror = event => { if (epoch !== gd.epoch) return; const reasons = { 'not-allowed': 'Izin dikte ditolak browser atau iframe.', 'service-not-allowed': 'Layanan pengenalan suara dibatasi browser.', 'audio-capture': 'Mikrofon tidak dapat digunakan.', 'network': 'Layanan dikte tidak terhubung.', 'no-speech': 'Belum ada ucapan yang dikenali. Coba mulai lagi.', 'language-not-supported': 'Bahasa Indonesia tidak tersedia di layanan browser ini.' }; const message = reasons[event.error] || ('Dikte berhenti: ' + event.error); pauseDikteRecording(true); gdState('error', 'Dikte belum tersedia'); gdMessage(message + ' Pratinjau tetap dapat diisi manual.', 'error'); };
-                rec.onend = () => { if (epoch !== gd.epoch) return; pauseDikteRecording(false); };
-                rec.start(); gdMessage(gd.commandMode ? 'Mode Perintah aktif. Ucapkan satu perintah utuh.' : 'Ucapkan teks. Klik Jeda untuk mengedit hasil sebelum dimasukkan.');
-            } catch (e) {
-                if (epoch !== gd.epoch) return;
-                pauseDikteRecording(true); gdState('error', 'Mikrofon belum aktif');
-                const denied = e.name === 'NotAllowedError' || e.name === 'SecurityError'; gdMessage(denied ? 'Izin mikrofon ditolak browser atau iframe. Pratinjau manual tetap tersedia.' : (e.message || 'Tidak dapat membuka mikrofon.'), 'error');
-            } finally { if (epoch === gd.epoch) { gd.starting = false; gdButtons(); } }
-        }
-        function pauseDikteRecording(abort = false) {
-            const hadAudio = gd.listening || gd.starting;
-            gd.starting = false; gd.listening = false; isSpeechRecording = false;
-            if (gd.startedAt) { gd.duration += Date.now() - gd.startedAt; gd.startedAt = 0; }
-            const rec = recognitionEngine; recognitionEngine = null;
-            // Normal pause accepts any final result produced by stop(); abort discards late results.
-            if (abort) { gd.epoch++; if (rec) { rec.onend = null; rec.onerror = null; try { rec.abort(); } catch (e) { } } }
-            else if (rec) { rec.onend = null; try { rec.stop(); } catch (e) { } }
-            // Cancel a pending permission request; a late stream is closed in startDikteRecording.
-            if (hadAudio && !gd.stream && !rec) gd.epoch++;
-            gdReleaseAudio(); $('#btn-stt-fab').removeClass('recording'); $('#luckysheet-wrapper').removeClass('dikte-sheet-glow');
-            gdEl('gd-interim').textContent = ''; gdState('paused', gdDraft().trim() ? 'Siap diperiksa' : 'Dikte dijeda'); gdButtons();
-            if (hadAudio) gdMessage('Mikrofon dimatikan. Periksa dan edit teks sebelum dimasukkan.');
-        }
-        function stopSpeechRecognition() { pauseDikteRecording(true); gdEl('gov-dikte-panel').classList.add('d-none'); gd.undo = []; gd.target = null; gd.owner = null; gdSetDraft(''); gd.duration = 0; gd.commandMode = false; gdEl('gd-command-mode').checked = false; gdEl('gd-command-help').classList.add('d-none'); }
-        function initWebSpeechAPI() { gdInitDrag(); gdDrawIdle(); gdButtons(); }
-        function openSpeechPopup() { openDiktePanel(); gdMessage('Gunakan panel ini untuk pratinjau. Popup kosong tidak digunakan sebagai pengganti izin mikrofon.'); }
-        function handleDikteResultFromPopup(text) { openDiktePanel(); gdSetDraft(String(text || '')); gdMessage('Teks diterima sebagai pratinjau; belum dimasukkan ke sel.'); }
-        function toggleDikteCommandMode() {
-            pauseDikteRecording(true); gd.commandMode = gdEl('gd-command-mode').checked;
-            gdEl('gd-command-help').classList.toggle('d-none', !gd.commandMode); gdEl('gd-mode-description').textContent = gd.commandMode ? 'Perintah utuh dapat mengubah sel' : 'Ucapan hanya menjadi teks';
-            gdMessage(gd.commandMode ? 'Mode Perintah aktif. Masukkan dan Tambahkan juga dapat dijalankan lewat perintah suara.' : 'Mode Perintah mati. Semua ucapan menjadi teks pratinjau.');
-        }
-                function handleVoiceCommandAndAppend(rawText) {
-            const formatted = GovDikteCore.formatBureaucracy(rawText);
-            const text = String(formatted || '').trim(); if (!text) return;
-            const command = GovDikteCore.command(text);
-            if (command) { gdRunCommand(command); return; }
-            gdSetDraft(GovDikteCore.merge(gdDraft(), text));
-            gdMessage('Teks dikenali: ' + text, 'success');
-        }
-        function runDikteTypedCommand() {
-            if (!gd.commandMode) return gdMessage('Aktifkan Mode Perintah terlebih dahulu.', 'error');
-            const command = GovDikteCore.command(gdEl('gd-command-input').value); if (!command) return gdMessage('Perintah tidak dikenali. Gunakan contoh yang tersedia.', 'error');
-            gdRunCommand(command); gdEl('gd-command-input').value = '';
-        }
-                function gdRunCommand(command) {
-            if (command.type === 'invalid') return gdMessage('Alamat sel tidak valid. Contoh: A1, B2, C10', 'error');
-            if (command.type === 'nextCol' || command.type === 'nextRow' || command.type === 'prevCol' || command.type === 'prevRow' || command.type === 'move') {
-                if (gdDraft().trim()) applyDiktePreview('append');
-                try {
-                    const target = gdResolveTarget(gd.target);
-                    let pos;
-                    if (command.type === 'nextCol') pos = { r: target.r, c: target.c + 1 };
-                    else if (command.type === 'prevCol') pos = { r: target.r, c: Math.max(0, target.c - 1) };
-                    else if (command.type === 'nextRow') pos = { r: target.r + 1, c: target.c };
-                    else if (command.type === 'prevRow') pos = { r: Math.max(0, target.r - 1), c: target.c };
-                    else pos = command.pos;
-
-                    if (pos.r > 9999 || pos.c > 200) throw new Error('Batas sel lembar kerja tercapai.');
-                    gd.target = { ...target, ...pos };
-                    gdRenderTarget();
-                    if (!target.fallback && isLuckysheetLoaded) {
-                        luckysheet.setRangeShow({ row: [pos.r, pos.r], column: [pos.c, pos.c] }, { order: target.order });
-                    }
-                    gdMessage('Pindah ke ' + GovDikteCore.coordinate(pos.r, pos.c), 'success');
-                } catch (e) { gdMessage(e.message, 'error'); }
-            } else if (command.type === 'clear') {
-                try {
-                    const target = gdResolveTarget(gd.target), old = gdReadCell(target);
-                    gdWriteCell(target, null, old.text, '', 'Dikte — Hapus');
-                    gdSetDraft('');
-                    gdMessage('Isi sel ' + GovDikteCore.coordinate(target.r, target.c) + ' dibersihkan.', 'success');
-                } catch(e) { gdMessage(e.message, 'error'); }
-            } else if (command.type === 'append' || command.type === 'replace') applyDiktePreview(command.type);
-            else if (command.type === 'undo') undoDikteInput(); 
-            else if (command.type === 'cancel') cancelDikteDraft(); 
-            else if (command.type === 'pause') pauseDikteRecording();
-        }
-        function gdReadCell(target) {
-            if (target.fallback) { const input = gdEl('grid-cell-' + (target.r + 1) + '-' + target.c); if (!input) throw new Error('Sel tujuan tidak tersedia.'); return { cell: { v: input.value, m: input.value }, text: input.value }; }
-            const grid = luckysheet.getRangeValue({ range: { row: [target.r, target.r], column: [target.c, target.c] }, order: target.order });
-            const cell = grid?.[0]?.[0] || null;
-            const raw = cell?.f ?? cell?.v ?? cell?.m ?? '';
-            return { cell: cell ? JSON.parse(JSON.stringify(cell)) : null, text: String(raw) };
-        }
-        function gdWriteCell(target, cell, prevText, newText, method = 'Speech-to-Text') {
-            if (!gmCanWriteWorkbook()) throw new Error('Kendali edit belum tersedia.');
-            if (target.fallback) { gdEl('grid-cell-' + (target.r + 1) + '-' + target.c).value = newText; setFallbackCell(target.r, target.c, newText); }
-            else { suppressCellHook = true; try { if (cell === null) luckysheet.clearCell(target.r, target.c, { order: target.order }); else luckysheet.setCellValue(target.r, target.c, cell, { order: target.order }); } finally { suppressCellHook = false; } }
-            recordCellAuditLog(GovDikteCore.coordinate(target.r, target.c), prevText, newText, method, target.order, target.sheetName);
-        }
-        async function applyDiktePreview(mode) {
-            if (gd.busy || !gdDraft().trim()) return; pauseDikteRecording(true);
-            gd.busy = true; gdButtons();
-            try {
-                const target = gdResolveTarget(gd.target), text = gdDraft().trim(); let old = gdReadCell(target);
-                if (mode === 'replace' && old.text) { const yes = await Swal.fire({ title: 'Ganti isi ' + GovDikteCore.coordinate(target.r, target.c) + '?', text: 'Isi sel yang sudah ada akan diganti dengan pratinjau dikte.', icon: 'question', showCancelButton: true, confirmButtonText: 'Ya, ganti', cancelButtonText: 'Batal' }); if (!yes.isConfirmed) return; const latest = gdReadCell(gdResolveTarget(target)); if (JSON.stringify(latest.cell) !== JSON.stringify(old.cell)) throw new Error('Isi sel berubah saat konfirmasi. Periksa kembali sebelum mengganti.'); }
-                if (mode === 'append' && old.cell?.f) throw new Error('Sel tujuan berisi formula. Pilih sel teks atau gunakan Masukkan untuk menggantinya dengan konfirmasi.');
-                const value = mode === 'append' ? GovDikteCore.merge(old.text, text) : text;
-                // Dictation is plain text; a spoken '=' is not executed as a formula.
-                const cell = { ...(old.cell || {}), v: value, m: value, ct: { fa: '@', t: 's' } }; delete cell.f;
-                gdWriteCell(target, cell, old.text, value); const after = gdReadCell(target).cell;
-                gd.undo.push({ target, before: old.cell, beforeText: old.text, after, afterText: value }); if (gd.undo.length > 20) gd.undo.shift(); gdSetDraft('');
-                gdMessage((mode === 'append' ? 'Teks ditambahkan ke ' : 'Teks dimasukkan ke ') + GovDikteCore.coordinate(target.r, target.c) + '. Penyimpanan server mengikuti status sinkronisasi.', 'success');
-            } catch (e) { gdMessage(e.message || String(e), 'error'); } finally { gd.busy = false; gdButtons(); }
-        }
-        function cancelDikteDraft() { if (gd.busy) return; pauseDikteRecording(true); gdSetDraft(''); gdState('idle', 'Pratinjau dibatalkan'); gdMessage('Pratinjau dibersihkan. Isi sel tetap seperti sebelumnya.'); }
-        function undoDikteInput() {
-            if (gd.busy || !gd.undo.length) return; pauseDikteRecording(true);
-            try {
-                const item = gd.undo[gd.undo.length - 1], target = gdResolveTarget(item.target), current = gdReadCell(target); if (JSON.stringify(current.cell) !== JSON.stringify(item.after)) throw new Error('Sel sudah berubah setelah input dikte. Undo dibatalkan agar perubahan lain tidak tertimpa.');
-                gdWriteCell(target, item.before, current.text, item.beforeText, 'Dikte — Undo'); gd.undo.pop(); gdMessage('Input dikte terakhir di ' + GovDikteCore.coordinate(target.r, target.c) + ' dibatalkan.', 'success'); updateDiktePreview();
-            } catch (e) { gdMessage(e.message, 'error'); }
-        }
-        function gdClampPosition() { const panel = gdEl('gov-dikte-panel'); if (panel.classList.contains('d-none') || !panel.style.left) return; const r = panel.getBoundingClientRect(); panel.style.left = Math.max(8, Math.min(r.left, window.innerWidth - r.width - 8)) + 'px'; panel.style.top = Math.max(8, Math.min(r.top, window.innerHeight - r.height - 8)) + 'px'; }
-        function gdRestorePosition() { const panel = gdEl('gov-dikte-panel'); if (window.innerWidth <= 600) { panel.style.left = ''; panel.style.top = ''; panel.style.right = ''; panel.style.bottom = ''; return; } try { const saved = JSON.parse(localStorage.getItem('govdikte_position') || 'null'); if (saved) { panel.style.left = saved.x + 'px'; panel.style.top = saved.y + 'px'; panel.style.right = 'auto'; panel.style.bottom = 'auto'; gdClampPosition(); } } catch (e) { } }
-        function gdInitDrag() {
-            const header = gdEl('gd-drag-handle'), panel = gdEl('gov-dikte-panel'); let drag = null;
-            header.addEventListener('pointerdown', e => { if (e.target.closest('button') || window.innerWidth <= 600) return; const r = panel.getBoundingClientRect(); drag = { x: e.clientX - r.left, y: e.clientY - r.top }; header.setPointerCapture(e.pointerId); });
-            header.addEventListener('pointermove', e => { if (!drag) return; panel.style.left = (e.clientX - drag.x) + 'px'; panel.style.top = (e.clientY - drag.y) + 'px'; panel.style.right = 'auto'; panel.style.bottom = 'auto'; gdClampPosition(); });
-            const end = () => { if (!drag) return; drag = null; const r = panel.getBoundingClientRect(); try { localStorage.setItem('govdikte_position', JSON.stringify({ x: r.left, y: r.top })); } catch (e) { } };
-            header.addEventListener('pointerup', end); header.addEventListener('pointercancel', end); window.addEventListener('resize', () => { gdRestorePosition(); gdClampPosition(); gdDrawIdle(); });
-            window.addEventListener('pagehide', () => pauseDikteRecording(true));
-            document.addEventListener('visibilitychange', () => { if (document.hidden && (gd.listening || gd.starting)) pauseDikteRecording(true); });
-        }
-
-        // GovDikte 2.0 Push-to-Talk (PTT) Shortcut: Tahan tombol Alt untuk dikte cepat
-        (function initPushToTalk() {
-            let altHeld = false;
-            window.addEventListener('keydown', e => {
-                if (e.key === 'Alt' && !altHeld && !e.repeat && gmCanWriteWorkbook()) {
-                    const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
-                    if (tag === 'input' || tag === 'textarea') return;
-                    altHeld = true;
-                    openDiktePanel();
-                    if (!gd.listening) startDikteRecording();
+                if (m) {
+                    let to = m[1].replace(/^(ce|si)\s+/, 'c ').replace(/^be\s+/, 'b ').replace(/^de\s+/, 'd ');
+                    const words = ['nol', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh'];
+                    for (let i = 1; i < words.length; i++) to = to.replace(new RegExp('\\b' + words[i] + '$'), String(i));
+                    const pos = address(to);
+                    return pos ? { type: 'move', pos } : { type: 'invalid' };
                 }
-            });
-            window.addEventListener('keyup', e => {
-                if (e.key === 'Alt' && altHeld) {
-                    altHeld = false;
-                    if (gd.listening) {
-                        pauseDikteRecording();
-                        if (gdDraft().trim()) applyDiktePreview('append');
-                    }
-                }
-            });
-        })();
-
-        Object.assign(window, { openDiktePanel, toggleDikteRecording, toggleDikteCheatSheet, focusDikteInput, closeDiktePanel, minimizeDiktePanel, captureDikteTarget, startDikteRecording, pauseDikteRecording, updateDiktePreview, applyDiktePreview, cancelDikteDraft, toggleDikteCommandMode, runDikteTypedCommand, undoDikteInput });
-        /* GOVDIKTE_CONTROLLER_END */
-
-        function startChatPolling() {
-            if (chatPollingTimer) clearInterval(chatPollingTimer);
-            fetchChatLogsFromGAS();
-            chatPollingTimer = setInterval(() => { if (currentUser && !document.hidden) fetchChatLogsFromGAS(); }, 15000);
-        }
-
-        function fetchChatLogsFromGAS() {
-            try {
-                let saved = IS_GAS ? null : localStorage.getItem(LOCAL_CHAT_KEY);
-                if (saved) {
-                    let parsed = JSON.parse(saved);
-                    if (parsed && typeof parsed === 'object') {
-                        mockChatStore = parsed;
-                        updateChatUIandUnreadBadges();
-                    }
-                }
-            } catch (e) { }
-
-            if (navigator.onLine && typeof google !== 'undefined' && google.script && google.script.run) {
-                gasRun().withSuccessHandler(function (res) {
-                    if (res && res.success && Array.isArray(res.chats)) {
-                        let grouped = {};
-                        res.chats.forEach(c => {
-                            let key = (c.sender_role === 'Admin') ? c.receiver_id : c.sender_id;
-                            if (!key) key = 'USR-002';
-                            if (!grouped[key]) grouped[key] = [];
-
-                            let senderRole = (c.sender_role === 'Admin') ? 'admin' : 'staff';
-                            grouped[key].push({
-                                chat_id: c.chat_id,
-                                sender_id: c.sender_id,
-                                sender_nama: c.sender_nama,
-                                receiver_id: c.receiver_id,
-                                receiver_nama: c.receiver_nama,
-                                sender: senderRole,
-                                text: c.text,
-                                time: c.time,
-                                status: c.status || 'unread'
-                            });
-                        });
-
-                        mockChatStore = grouped;
-                        if (!IS_GAS) localStorage.setItem(LOCAL_CHAT_KEY, JSON.stringify(mockChatStore));
-                        updateChatUIandUnreadBadges();
-                    }
-                }).getChatLogsFromGAS();
-            }
-        }
-
-        function updateChatUIandUnreadBadges() {
-            if (!currentUser) return;
-
-            let totalAdminUnread = 0;
-
-            if (currentUser.role === 'Admin') {
-                staffList.filter(s => s.role === 'Staf').forEach(s => {
-                    let msgs = mockChatStore[s.user_id] || [];
-                    let staffUnread = msgs.filter(m => m.receiver_id === currentUser.user_id && m.status === 'unread').length;
-                    totalAdminUnread += staffUnread;
-
-                    let badgeEl = $(`#chat-staff-unread-${escapeHtml(s.user_id)}`);
-                    if (badgeEl.length) {
-                        if (staffUnread > 0) {
-                            badgeEl.text(staffUnread).removeClass('d-none');
-                        } else {
-                            badgeEl.addClass('d-none');
-                        }
-                    }
-                });
-
-                let navBadge = $('#nav-chat-unread-badge');
-                let navBtn = $('#nav-chat-notif-btn');
-
-                if (totalAdminUnread > 0) {
-                    if (navBadge.hasClass('d-none')) {
-                        playNotificationChime();
-                        navBtn.addClass('animate__animated animate__swing');
-                    }
-                    navBadge.text(totalAdminUnread).removeClass('d-none');
-                } else {
-                    navBadge.addClass('d-none');
-                    navBtn.removeClass('animate__animated animate__swing');
-                }
-
-            } else {
-                let msgs = mockChatStore[currentUser.user_id] || [];
-                let staffUnread = msgs.filter(m => m.receiver_id === currentUser.user_id && m.status === 'unread').length;
-
-                let fabBadge = $('#staff-chat-unread-badge');
-                if (staffUnread > 0) {
-                    if (fabBadge.hasClass('d-none')) {
-                        playNotificationChime();
-                    }
-                    fabBadge.text(staffUnread).removeClass('d-none');
-                } else {
-                    fabBadge.addClass('d-none');
-                }
-            }
-
-            if ($('#modalQuickChat').hasClass('show')) {
-                renderChatMessages(activeChatStaffId);
-            }
-        }
-
-        function playNotificationChime() {
-            try {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                if (!AudioContext) return;
-                const ctx = new AudioContext();
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(587.33, ctx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
-                gain.gain.setValueAtTime(0.15, ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.start();
-                osc.stop(ctx.currentTime + 0.3);
-            } catch (e) { }
-        }
-
-        function openAdminChatListModal() {
-            openQuickChat((staffList || []).find(s => s.role === 'Staf')?.user_id);
-        }
-
-        function openStaffChatWithAdmin() {
-            openQuickChat('USR-001');
-        }
-
-        function openQuickChat(targetStaffId) {
-            if (!currentUser) return;
-
-            if (currentUser.role === 'Staf') {
-                activeChatStaffId = currentUser.user_id;
-                $('#chat-staff-selector-col').addClass('d-none');
-                $('#chat-messages-col').removeClass('col-md-8').addClass('col-12');
-
-                $('#chat-active-nama').text("Admin / Supervisor Banyuasin");
-                $('#chat-active-nip').text((staffList || []).find(s => s.role === 'Admin' && s.status === 'Aktif')?.nama || 'Admin');
-                $('#chat-active-avatar').attr('src', (staffList || []).find(s => s.role === 'Admin' && s.status === 'Aktif')?.foto || GM_LOGO);
-
-                markMessagesAsRead(currentUser.user_id);
-            } else {
-                activeChatStaffId = targetStaffId || "USR-002";
-                $('#chat-staff-selector-col').removeClass('d-none');
-                $('#chat-messages-col').removeClass('col-12').addClass('col-md-8');
-
-                renderStaffChatList();
-                let staff = staffList.find(s => s.user_id === activeChatStaffId) || staffList[1];
-                if (staff) {
-                    $('#chat-active-nama').text(staff.nama);
-                    $('#chat-active-nip').text(`NIP. ${escapeHtml(staff.nip || '-')}`);
-                    $('#chat-active-avatar').attr('src', staff.foto || GM_LOGO);
-                }
-                markMessagesAsRead(activeChatStaffId);
-            }
-
-            renderChatMessages(activeChatStaffId);
-
-            const modalEl = document.getElementById('modalQuickChat');
-            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-            modal.show();
-        }
-
-        function renderStaffChatList() {
-            let html = '';
-            let activeStaffs = staffList.filter(s => s.role === 'Staf');
-            $('#chat-total-staff-count').text(`${activeStaffs.length} Staf`);
-
-            activeStaffs.forEach(s => {
-                let isActive = s.user_id === activeChatStaffId;
-                let msgs = mockChatStore[s.user_id] || [];
-                let staffUnread = msgs.filter(m => m.receiver_id === currentUser.user_id && m.status === 'unread').length;
-
-                html += `
-                    <button class="list-group-item list-group-item-action ${isActive ? 'active' : ''} p-3 border-0 border-bottom d-flex align-items-center justify-content-between" onclick="window.switchChatStaff('${escapeHtml(s.user_id)}')">
-                        <div class="d-flex align-items-center gap-2 overflow-hidden">
-                            <img src="${escapeHtml(s.foto || GM_LOGO)}" class="avatar-box rounded-circle" style="width:32px;height:32px;" alt="Avatar">
-                            <div class="text-truncate">
-                                <div class="fw-bold small text-truncate ${isActive ? 'text-white' : 'text-dark'}">${escapeHtml(s.nama)}</div>
-                                <div class="extra-small opacity-75 text-truncate ${isActive ? 'text-white-50' : 'text-muted'}">${escapeHtml(s.jabatan)}</div>
-                            </div>
-                        </div>
-                        <span id="chat-staff-unread-${escapeHtml(s.user_id)}" class="badge rounded-pill bg-danger extra-small ${staffUnread > 0 ? '' : 'd-none'}">${staffUnread}</span>
-                    </button>
-                `;
-            });
-            $('#chat-staff-list-group').html(html);
-        }
-
-        function switchChatStaff(staffId) {
-            activeChatStaffId = staffId;
-            renderStaffChatList();
-            let staff = staffList.find(s => s.user_id === staffId);
-            if (staff) {
-                $('#chat-active-nama').text(staff.nama);
-                $('#chat-active-nip').text(`NIP. ${escapeHtml(staff.nip || '-')}`);
-                $('#chat-active-avatar').attr('src', staff.foto || GM_LOGO);
-            }
-            markMessagesAsRead(staffId);
-            renderChatMessages(staffId);
-        }
-
-        function markMessagesAsRead(staffKey) {
-            if (!currentUser) return;
-            let msgs = mockChatStore[staffKey] || [];
-            let needsGASSync = false;
-
-            msgs.forEach(m => {
-                if ((m.receiver_id === currentUser.user_id || (currentUser.role === 'Admin' && m.receiver_id === currentUser.user_id)) && m.status === 'unread') {
-                    m.status = 'read';
-                    needsGASSync = true;
-                }
-            });
-
-            if (!IS_GAS) localStorage.setItem(LOCAL_CHAT_KEY, JSON.stringify(mockChatStore));
-            updateChatUIandUnreadBadges();
-
-            if (needsGASSync && navigator.onLine && typeof google !== 'undefined' && google.script && google.script.run) {
-                let senderId = (currentUser.role === 'Admin') ? staffKey : ((staffList || []).find(s => s.role === 'Admin' && s.status === 'Aktif')?.user_id || 'USR-001');
-                gasRun().markChatAsReadGAS(senderId, currentUser.user_id);
-            }
-        }
-
-        function renderChatMessages(staffKey) {
-            let msgs = mockChatStore[staffKey] || [];
-            let html = msgs.map(m => {
-                let isSelf = m.sender_id === currentUser?.user_id || (!m.sender_id && m.sender === (currentUser?.role === 'Admin' ? 'admin' : 'staff'));
-                let isRead = (m.status === 'read');
-
-                return `
-                    <div class="${isSelf ? 'chat-bubble-self' : 'chat-bubble-other'}">
-                        <div>${escapeHtml(m.text)}</div>
-                        <div class="d-flex align-items-center justify-content-end gap-1 mt-1">
-                            <small class="opacity-75 extra-small" style="font-size:0.68rem;">${escapeHtml(m.time)}</small>
-                            ${isSelf ? `
-                                <span class="ms-1" style="font-size: 0.7rem;" title="${isRead ? 'Pesan telah dibaca' : 'Pesan terkirim'}">
-                                    <i class="fas fa-check-double ${isRead ? 'text-info' : 'opacity-50'}"></i>
-                                </span>
-                            ` : ''}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            let container = $('#chat-messages-container');
-            container.html(html || '<div class="text-center text-muted extra-small py-4"><i class="fas fa-comments fs-2 d-block mb-2 opacity-25"></i>Belum ada obrolan. Mulai percakapan sekarang.</div>');
-            container.scrollTop(container[0].scrollHeight);
-        }
-
-        function sendQuickChatMessage(e) {
-            if (e) e.preventDefault();
-            let text = $('#chat-input-text').val().trim();
-            if (!text || !currentUser) return;
-            if (IS_GAS && !navigator.onLine) return Swal.fire('Pesan belum terkirim', 'Hubungkan internet sebelum mengirim pesan.', 'warning');
-
-            let timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-            let isAdmin = currentUser.role === 'Admin';
-            let senderRole = isAdmin ? 'admin' : 'staff';
-
-            let targetStaffObj = staffList.find(s => s.user_id === activeChatStaffId) || { nama: 'Staf' };
-
-            let chatPayload = {
-                chat_id: 'CHAT-' + Date.now(),
-                time: timeStr,
-                sender_id: currentUser.user_id,
-                sender_nama: currentUser.nama,
-                receiver_id: isAdmin ? activeChatStaffId : ((staffList || []).find(s => s.role === 'Admin' && s.status === 'Aktif')?.user_id || 'USR-001'),
-                receiver_nama: isAdmin ? targetStaffObj.nama : ((staffList || []).find(s => s.role === 'Admin' && s.status === 'Aktif')?.nama || 'Admin'),
-                sender: senderRole,
-                text: text,
-                status: 'unread'
-            };
-
-            let storeKey = isAdmin ? activeChatStaffId : currentUser.user_id;
-            if (!mockChatStore[storeKey]) mockChatStore[storeKey] = [];
-            mockChatStore[storeKey].push(chatPayload);
-
-            if (!IS_GAS) localStorage.setItem(LOCAL_CHAT_KEY, JSON.stringify(mockChatStore));
-
-            if (navigator.onLine && typeof google !== 'undefined' && google.script && google.script.run) {
-                gasRun().withSuccessHandler(() => fetchChatLogsFromGAS()).withFailureHandler(err => { mockChatStore[storeKey] = (mockChatStore[storeKey] || []).filter(m => m.chat_id !== chatPayload.chat_id); renderChatMessages(storeKey); Swal.fire('Pesan belum terkirim', err.message || String(err), 'error'); }).saveChatMessageToGAS(chatPayload);
-            }
-
-            $('#chat-input-text').val('');
-            renderChatMessages(storeKey);
-            updateChatUIandUnreadBadges();
-        }
-
-        function initAuditLogsStore() {
-            try {
-                let saved = IS_GAS ? null : localStorage.getItem(LOCAL_AUDIT_KEY);
-                if (saved) {
-                    let parsed = JSON.parse(saved);
-                    if (Array.isArray(parsed) && parsed.length > 0) {
-                        auditLogsData = parsed;
-                    }
-                }
-            } catch (e) { }
-
-            if (navigator.onLine && typeof google !== 'undefined' && google.script && google.script.run) {
-                gasRun().withSuccessHandler(function (res) {
-                    if (res && res.success && Array.isArray(res.logs)) {
-                        if (IS_GAS) auditLogsData = res.logs; else res.logs.forEach(remoteLog => { if (!auditLogsData.some(l => l.log_id === remoteLog.log_id)) auditLogsData.push(remoteLog); });
-                        auditLogsData.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
-                        saveAuditLogsToLocalStorage();
-                        updateAuditLogsTable();
-                        refreshDashboardData();
-                    }
-                }).getAuditLogsFromGAS();
-            }
-        }
-
-        function saveAuditLogsToLocalStorage() {
-            try {
-                if (!IS_GAS) localStorage.setItem(LOCAL_AUDIT_KEY, JSON.stringify(auditLogsData));
-            } catch (e) { }
-        }
-
-        function fetchUsersFromGAS() {
-            try {
-                let saved = IS_GAS ? null : localStorage.getItem(LOCAL_USERS_KEY);
-                if (saved) {
-                    let parsed = JSON.parse(saved);
-                    if (Array.isArray(parsed) && parsed.length > 0) {
-                        staffList = parsed;
-                        syncStaffData();
-                    }
-                }
-            } catch (e) { }
-
-            if (navigator.onLine && typeof google !== 'undefined' && google.script && google.script.run) {
-                gasRun().withSuccessHandler(function (res) {
-                    if (currentUser && res && res.success && Array.isArray(res.users)) {
-                        staffList = res.users; gmMonitoringVersion = res.monitoring_version || 0; if (currentUser?.role === 'Admin') $('#gm-monitor-upgrade').toggleClass('d-none', gmMonitoringVersion >= 2);
-                        if (!IS_GAS) localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(staffList));
-                        syncStaffData();
-                        refreshDashboardData();
-                    }
-                }).getUsersFromGAS();
-            }
-        }
-
-        function updateAuditLogsTable() { gmSystemEnsure(); }
-
-        function openStaffMyAuditModal() {
-            if (!currentUser) return;
-            let myLogs = auditLogsData.filter(l => l.user_id === currentUser.user_id || l.nama_staf === currentUser.nama);
-            let html = '';
-
-            if (myLogs.length === 0) {
-                html = '<tr><td colspan="6" class="text-center text-muted py-3">Belum ada catatan aktivitas input Anda.</td></tr>';
-            } else {
-                myLogs.forEach(l => {
-                    html += `
-                        <tr>
-                            <td><span class="font-monospace text-muted">${escapeHtml(l.log_id)}</span></td>
-                            <td>${escapeHtml(l.timestamp)}</td>
-                            <td><span class="badge bg-primary font-monospace">${escapeHtml(l.cell)}</span></td>
-                            <td><strong class="text-dark">${escapeHtml(l.new_val)}</strong></td>
-                            <td><span class="text-muted">${escapeHtml(l.prev_val)}</span></td>
-                            <td><span class="${l.method === 'Speech-to-Text' ? 'method-badge-stt' : (l.method === 'GovLens OCR' ? 'method-badge-ocr' : 'method-badge-manual')}">${escapeHtml(l.method)}</span></td>
-                        </tr>
-                    `;
-                });
-            }
-
-            $('#tbody-staff-my-audit').html(html);
-            const modal = new bootstrap.Modal(document.getElementById('modalStaffMyAudit'));
-            modal.show();
-        }
-
-        function applyAuditLogFilters() { gmSys.limit = 20; gmSystemRender(); }
-        function resetAuditFilters() { $('#audit-filter-staff,#audit-filter-method').val('ALL'); $('#system-start,#system-end').val(gmActivityDate()); gmSystemLoad(true); }
-        function exportAuditLogCSV() { gmSystemExport(); }
-
-        function fetchAuditLogsFromGAS() {
-            let icon = $('#btn-fetch-audit-icon');
-            icon.addClass('fa-spin');
-
-            if (navigator.onLine && typeof google !== 'undefined' && google.script && google.script.run) {
-                gasRun().withSuccessHandler(function (res) {
-                    icon.removeClass('fa-spin');
-                    if (res && res.success && Array.isArray(res.logs)) {
-                        if (IS_GAS) auditLogsData = res.logs; else res.logs.forEach(remoteLog => { if (!auditLogsData.some(l => l.log_id === remoteLog.log_id)) auditLogsData.push(remoteLog); });
-                        auditLogsData.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
-                        saveAuditLogsToLocalStorage();
-                        updateAuditLogsTable();
-                        refreshDashboardData();
-
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'Log Audit Tersinkron!',
-                            text: `Berhasil menarik data log audit dari server penyimpanan GovMonitor.`,
-                            timer: 2000,
-                            showConfirmButton: false,
-                            toast: true,
-                            position: 'top-end'
-                        });
-                    }
-                }).withFailureHandler(function () {
-                    icon.removeClass('fa-spin');
-                }).getAuditLogsFromGAS();
-            } else {
-                setTimeout(() => {
-                    icon.removeClass('fa-spin');
-                }, 500);
-            }
-        }
-
-        let autoSaveTimer = null, snapshotBusy = false, snapshotAgain = false;
-        function getWorkbook() { return isLuckysheetLoaded ? luckysheet.getAllSheets() : fallbackSheets; }
-        function setFallbackCell(r, c, value) { const sh = fallbackSheets[0] || (fallbackSheets[0] = { name: 'lembar_kerja 1', data: [], status: 1, order: 0 }); sh.data ??= []; sh.data[r] ??= []; sh.data[r][c] = { v: value, m: String(value), ct: { fa: '@', t: 's' } }; sh.celldata = (sh.celldata || []).filter(x => !(x.r === r && x.c === c)); }
-        function pendingAuditKey() { return getStaffStorageKey() + '_audit_pending'; }
-        function pendingAudits() { try { return JSON.parse(localStorage.getItem(pendingAuditKey()) || '[]'); } catch (e) { return []; } }
-        function keepPendingAudit(item) { try { const pending = pendingAudits(); pending.push(item); localStorage.setItem(pendingAuditKey(), JSON.stringify(pending)); } catch (e) { Swal.fire('Backup lokal penuh', 'Ekspor backup JSON dan sinkronkan sekarang.', 'warning'); } }
-        function queueSnapshot() { if (gmStaffConflict || gmStaffPaused || gmEnding || !currentUser || currentUser.role !== 'Staf') return; clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(saveRemoteSnapshot, 2000); }
-        function saveRemoteSnapshot(manual = false) {
-            if (gmEnding || gmStaffConflict || (gmStaffPaused && (gmStaffLock?.state === 'active' || gmStaffAcknowledged))) return;
-            if (!currentUser || currentUser.role !== 'Staf') return;
-            saveSheetToLocalStorage();
-            if (!navigator.onLine) { saveSheetToLocalStorage(); $('#status-sync-text').text('Offline · perubahan menunggu sinkronisasi'); if (manual) Swal.fire('Belum tersimpan di server', 'Internet tidak tersedia. Backup browser tetap disimpan.', 'warning'); return; }
-            if (snapshotBusy) { snapshotAgain = true; return; }
-            const data = JSON.parse(JSON.stringify(getWorkbook())); if (!data.length) return;
-            snapshotBusy = true; const owner = currentUser.user_id, saveToken = sessionToken, key = getStaffStorageKey(), logs = pendingAudits().slice(0, 500);
-            $('#sync-icon-spin').addClass('fa-spin');
-            const finish = () => { snapshotBusy = false; $('#sync-icon-spin').removeClass('fa-spin'); if (snapshotAgain && currentUser?.user_id === owner) { snapshotAgain = false; queueSnapshot(); } };
-            gasRun().withSuccessHandler(res => {
-                if (currentUser?.user_id === owner && sessionToken === saveToken) {
-                    gmStaffSaved(res, data); const saved = new Set(res.saved_log_ids || []); localStorage.setItem(pendingAuditKey(), JSON.stringify(pendingAudits().filter(x => !saved.has(x.log_id))));
-                    if (JSON.stringify(getWorkbook()) === JSON.stringify(data) && !pendingAudits().length) localStorage.removeItem(key + '_dirty'); else snapshotAgain = true;
-                    $('#status-sync-text').text('Tersinkron di Google Sheets · ' + new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }));
-                    if (manual) Swal.fire('Sinkronisasi Berhasil', res.synced_tabs + ' tab lembar kerja staf berhasil tersimpan di Google Sheets Anda.', 'success');
-                } finish();
-            }).withFailureHandler(err => { if (/Versi lembar kerja berubah/.test(err.message)) { gmStaffConflict = true; gmStaffOverlay(); } $('#status-sync-text').text('Belum tersimpan di server · klik Sinkronisasi'); if (manual) Swal.fire('Sinkronisasi gagal', err.message || String(err), 'error'); finish(); }).syncFullSheetToGAS({ sheets_data: data, audit_logs: logs, expected_revision: gmStaffRevision });
-        }
-        function syncNowWithGAS() { saveSheetToLocalStorage(); clearTimeout(autoSaveTimer); saveRemoteSnapshot(true); }
-        window.addEventListener('online', queueSnapshot);
-        window.addEventListener('beforeunload', e => { if (currentUser?.role === 'Staf' && IS_GAS && localStorage.getItem(getStaffStorageKey() + '_dirty') === '1') { saveSheetToLocalStorage(); e.preventDefault(); e.returnValue = ''; } });
-        function startWorkMonitoring() {
-            clearInterval(watchTimer); clearInterval(heartbeatTimer); clearInterval(monitorTimer);
-            if (currentUser?.role === 'Staf') {
-                gmSendHeartbeat(); heartbeatTimer = setInterval(gmSendHeartbeat, 30000);
-                watchTimer = setInterval(() => { if (!currentUser || (!isLuckysheetLoaded && !fallbackSheets.length)) return; const now = JSON.stringify(getWorkbook()); if (now !== lastFingerprint) { lastFingerprint = now; saveSheetToLocalStorage(); localStorage.setItem(getStaffStorageKey() + '_dirty', '1'); queueSnapshot(); } }, 2000);
-            } else if (IS_GAS) { monitorTimer = setInterval(refreshAdminMonitor, 15000); }
-        }
-        function refreshAdminMonitor() {
-            gmBroadcastSync();
-            if (!IS_GAS || !currentUser || currentUser.role !== 'Admin' || document.hidden || monitorBusy) return;
-            monitorBusy = true; gasRun().withSuccessHandler(res => { monitorBusy = false; if (currentUser?.role !== 'Admin') return; auditLogsData = res.logs; refreshDashboardData(); updateAuditLogsTable(); renderActivityStream(); renderLivePeekGrid(); if ($('#modalLiveViewOnly').hasClass('show')) renderLiveViewOnlyGrid(activePeekStaffId); }).withFailureHandler(() => { monitorBusy = false; }).getAuditLogsFromGAS();
-            fetchUsersFromGAS();
-        }
-        function recordCellAuditLog(cellCoord, prevVal, newVal, method, subSheetIndex, targetSheetName) {
-            if (!currentUser) return;
-            if (gmEditorCellAudit()) return; gmRecordActivity();
-            let timestamp = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
-            let logId = "LOG-" + crypto.randomUUID();
-
-            let currentSheetName = targetSheetName || fallbackSheets[0]?.name || 'lembar_kerja 1';
-            try {
-                if (!targetSheetName && isLuckysheetLoaded && typeof luckysheet !== 'undefined' && luckysheet.getSheet) {
-                    let activeSheetObj = luckysheet.getSheet();
-                    if (activeSheetObj && activeSheetObj.name) currentSheetName = activeSheetObj.name;
-                }
-            } catch (e) { }
-
-            let logItem = {
-                log_id: logId,
-                timestamp: new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Jakarta' }),
-                sheet_name: currentSheetName,
-                user_id: currentUser.user_id,
-                nama_staf: currentUser.nama,
-                nip: currentUser.nip || "-",
-                ip: "Tidak tersedia",
-                device: navigator.userAgent,
-                cell: cellCoord,
-                prev_val: prevVal,
-                new_val: newVal,
-                audit_context: gmCaptureContext(),
-                network_info: gmBrowserNetwork(),
-                method: method || "Manual"
-            };
-
-            auditLogsData.unshift(logItem);
-            saveAuditLogsToLocalStorage();
-            refreshDashboardData();
-            updateAuditLogsTable();
-            saveSheetToLocalStorage();
-            localStorage.setItem(getStaffStorageKey() + '_dirty', '1');
-            if (IS_GAS) keepPendingAudit(logItem);
-            queueSnapshot();
-
-            let payload = {
-                sheet_id: "SHEET-001",
-                user_id: currentUser.user_id,
-                nama_staf: currentUser.nama,
-                nama: currentUser.nama,
-                nip: currentUser.nip,
-                jabatan: currentUser.jabatan,
-                sheet_name: currentSheetName,
-                cell: cellCoord,
-                val: newVal,
-                timestamp: timestamp,
-                sub_sheet_index: subSheetIndex || 0
-            };
-
-
-        }
-
-        function exportToJson() {
-            try {
-                let sheetsData = getWorkbook();
-                let exportPayload = {
-                    app_name: "Government Staff Output & Input Monitoring System",
-                    region: "Pemkab Banyuasin",
-                    created_at: new Date().toISOString(),
-                    exported_by: currentUser ? currentUser.nama : "Staf",
-                    nip: currentUser ? currentUser.nip : "-",
-                    sheets: sheetsData,
-                    audit_logs: auditLogsData
-                };
-
-                let jsonStr = JSON.stringify(exportPayload, null, 2);
-                let blob = new Blob([jsonStr], { type: "application/json" });
-                let url = URL.createObjectURL(blob);
-
-                let link = document.createElement("a");
-                link.href = url;
-                link.download = `Backup_GovMonitor_${currentUser ? currentUser.username : 'staf'}_${new Date().toISOString().slice(0, 10)}.json`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-            } catch (err) { }
-        }
-
-        function importFromJson(e) {
-            let file = e.target.files[0];
-            if (!file) return;
-
-            let reader = new FileReader();
-            reader.onload = function (evt) {
-                try {
-                    let parsed = JSON.parse(evt.target.result);
-                    let sheetsToLoad = parsed.sheets || (Array.isArray(parsed) ? parsed : null);
-
-                    if (!sheetsToLoad || !Array.isArray(sheetsToLoad) || !sheetsToLoad.length || sheetsToLoad.length > 20 || file.size > 6000000) {
-                        throw new Error("Format JSON tidak sesuai.");
-                    }
-
-                    let staffKey = getStaffStorageKey();
-                    localStorage.setItem(staffKey, JSON.stringify(sheetsToLoad));
-                    localStorage.setItem(staffKey + '_dirty', '1'); initLuckysheetEditor(sheetsToLoad); setTimeout(queueSnapshot, 600);
-
-                    Swal.fire({ icon: 'success', title: 'Backup Dipulihkan!', text: 'Lembar kerja berhasil dipulihkan.' });
-                } catch (err) {
-                    Swal.fire('Gagal Impor', err.message, 'error');
-                }
-            };
-            reader.readAsText(file);
-            e.target.value = '';
-        }
-
-        
-        window.selectedXlsxFile = null;
-
-        window.openImportExcelModal = function() {
-            window.selectedXlsxFile = null;
-            $('#input-file-xlsx').val('');
-            $('#selected-file-info').addClass('d-none');
-            $('#btn-do-import-xlsx').prop('disabled', true);
-            $('#import-progress-container').addClass('d-none');
-            const modalEl = document.getElementById('modalImportExcel');
-            if (modalEl) {
-                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-                modal.show();
-            }
-        };
-
-        window.handleSelectedXlsxFile = function(file) {
-            if (!file) return;
-            window.selectedXlsxFile = file;
-            $('#selected-file-name').html('<i class="fas fa-file-excel me-2 text-success"></i>' + escapeHtml(file.name));
-            $('#selected-file-size').text((file.size / 1024).toFixed(1) + ' KB');
-            $('#selected-file-info').removeClass('d-none');
-            $('#btn-do-import-xlsx').prop('disabled', false);
-        };
-
-        window.clearSelectedCells = function() {
-            if (typeof luckysheet !== 'undefined' && luckysheet.clearCell) {
-                try { luckysheet.clearCell(); } catch(e) {}
-            }
-        };
-
-        window.executeImportXlsx = function() {
-            const file = window.selectedXlsxFile;
-            if (!file) return;
-
-            const opt = $('input[name="importLocationOption"]:checked').val() || 'replace';
-            $('#import-progress-container').removeClass('d-none');
-            $('#import-progress-bar').css('width', '30%');
-            $('#import-progress-percent').text('30%');
-            $('#import-progress-status').text('Membaca XML, warna latar, border, dan formula sel...');
-            $('#btn-do-import-xlsx').prop('disabled', true);
-
-            // Periksa ketersediaan LuckyExcel
-            if (typeof LuckyExcel !== 'undefined' && typeof LuckyExcel.transformExcelToLucky === 'function') {
-                LuckyExcel.transformExcelToLucky(file, function(exportJson, luckysheetfile) {
-                    if (!exportJson || !exportJson.sheets || exportJson.sheets.length === 0) {
-                        $('#import-progress-container').addClass('d-none');
-                        $('#btn-do-import-xlsx').prop('disabled', false);
-                        fallbackImportWithSheetJS(file, opt);
-                        return;
-                    }
-
-                    $('#import-progress-bar').css('width', '80%');
-                    $('#import-progress-percent').text('80%');
-                    $('#import-progress-status').text('Menerapkan lembar kerja identik ke tampilan...');
-
-                    setTimeout(function() {
-                        try {
-                            applyImportedSheetsToLuckysheet(exportJson.sheets, opt, file.name);
-                        } catch (e) {
-                            console.error('Error applying imported sheets:', e);
-                            $('#import-progress-container').addClass('d-none');
-                            $('#btn-do-import-xlsx').prop('disabled', false);
-                            Swal.fire('Gagal Menerapkan Sheet', e.message, 'error');
-                        }
-                    }, 80);
-                }, function(err) {
-                    console.warn('LuckyExcel error, beralih ke SheetJS fallback:', err);
-                    fallbackImportWithSheetJS(file, opt);
-                });
-            } else {
-                fallbackImportWithSheetJS(file, opt);
-            }
-        };
-
-        function applyImportedSheetsToLuckysheet(importedSheets, opt, fileName) {
-            if (!Array.isArray(importedSheets) || !importedSheets.length) throw new Error('Data sheet tidak valid.');
-
-            // Pastikan status dan order terisi dengan benar
-            importedSheets.forEach((s, idx) => {
-                s.status = idx === 0 ? '1' : '0';
-                s.order = String(idx);
-                if (!s.name) s.name = 'Sheet ' + (idx + 1);
-            });
-
-            if (opt === 'replace') {
-                // Ganti seluruh spreadsheet
-                try { if (typeof luckysheet !== 'undefined' && luckysheet.destroy) luckysheet.destroy(); } catch(e) {}
-                initLuckysheetEditor(importedSheets);
-            } else {
-                // Sisipkan sheet baru ke workbook yang sudah ada
-                const currentSheets = (typeof luckysheet !== 'undefined' && luckysheet.getAllSheets) ? luckysheet.getAllSheets() : [];
-                importedSheets.forEach((newS) => {
-                    newS.status = '0';
-                    newS.order = String(currentSheets.length);
-                    currentSheets.push(newS);
-                    if (typeof luckysheet !== 'undefined' && luckysheet.setSheetAdd) {
-                        try { luckysheet.setSheetAdd({ name: newS.name, data: newS.data || [], celldata: newS.celldata || [] }); } catch(e) {}
-                    }
-                });
-                try { if (typeof luckysheet !== 'undefined' && luckysheet.destroy) luckysheet.destroy(); } catch(e) {}
-                initLuckysheetEditor(currentSheets);
-            }
-
-            // Simpan ke local storage
-            try {
-                let staffKey = getStaffStorageKey();
-                localStorage.setItem(staffKey, JSON.stringify(importedSheets));
-            } catch(e) {}
-
-            $('#import-progress-bar').css('width', '100%');
-            $('#import-progress-percent').text('100%');
-            $('#import-progress-status').text('Selesai!');
-
-            setTimeout(function() {
-                const modalEl = document.getElementById('modalImportExcel');
-                if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
-                Swal.fire({
-                    icon: 'success',
-                    title: 'File Excel Berhasil Diimpor!',
-                    html: `File <b>${escapeHtml(fileName || 'Excel')}</b> berhasil dimuat.<br><small class="text-muted">Warna, border, formula, dan format sel telah disesuaikan sama persis.</small>`,
-                    timer: 3000,
-                    showConfirmButton: false
-                });
-                // Otomatis picu sinkronisasi ke server jika sedang online
-                if (typeof window.syncNowWithGAS === 'function') {
-                    window.syncNowWithGAS(true);
-                }
-            }, 300);
-        }
-
-        function fallbackImportWithSheetJS(file, opt) {
-            if (typeof XLSX === 'undefined') {
-                $('#import-progress-container').addClass('d-none');
-                $('#btn-do-import-xlsx').prop('disabled', false);
-                return Swal.fire('Pustaka Excel Tidak Tersedia', 'Pastikan koneksi internet aktif untuk memuat library Excel.', 'error');
-            }
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, { type: 'array', cellStyles: true, cellFormula: true, cellDates: true });
-                    const newSheets = [];
-
-                    workbook.SheetNames.forEach((sheetName, sIdx) => {
-                        const worksheet = workbook.Sheets[sheetName];
-                        const json = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false });
-                        const celldata = [];
-                        
-                        (json || []).forEach((row, r) => {
-                            (row || []).forEach((val, c) => {
-                                if (val !== undefined && val !== null && val !== '') {
-                                    celldata.push({ r, c, v: { v: val, m: String(val) } });
-                                }
-                            });
-                        });
-
-                        newSheets.push({
-                            name: sheetName,
-                            color: '',
-                            status: sIdx === 0 ? '1' : '0',
-                            order: String(sIdx),
-                            data: [],
-                            celldata: celldata,
-                            config: {}
-                        });
-                    });
-
-                    applyImportedSheetsToLuckysheet(newSheets, opt, file.name);
-                } catch(err) {
-                    $('#import-progress-container').addClass('d-none');
-                    $('#btn-do-import-xlsx').prop('disabled', false);
-                    Swal.fire('Gagal Mengimpor File', err.message, 'error');
-                }
-            };
-            reader.readAsArrayBuffer(file);
-        }
-    
-        function exportToXlsx() {
-            if (typeof XLSX === 'undefined') return Swal.fire('Pustaka Excel belum dimuat', 'Muat ulang halaman dan periksa koneksi.', 'error');
-            try {
-                const wb = XLSX.utils.book_new(), names = new Set(); getWorkbook().forEach((sh, i) => {
-                    let rows = (sh.data || []).map(row => (row || []).map(cell => cell?.v ?? cell?.m ?? '')); if (!rows.length) (sh.celldata || []).forEach(x => { rows[x.r] ??= []; rows[x.r][x.c] = x.v?.v ?? x.v?.m ?? ''; }); const ws = XLSX.utils.aoa_to_sheet(rows);
-                    const cells = []; (sh.data || []).forEach((row, r) => (row || []).forEach((v, c) => { if (v?.f) cells.push({ r, c, v }); })); if (!sh.data?.length) cells.push(...(sh.celldata || []).filter(x => x.v?.f)); cells.forEach(x => { const address = XLSX.utils.encode_cell({ r: x.r, c: x.c }); ws[address] ??= { t: 'n', v: 0 }; ws[address].f = x.v.f.replace(/^=/, ''); });
-                    let name = String(sh.name || 'Sheet' + (i + 1)).replace(/[\[\]:*?\/\\]/g, '_').slice(0, 31) || 'Sheet'; const base = name; let n = 1; while (names.has(name)) name = base.slice(0, 26) + '_' + n++; names.add(name); XLSX.utils.book_append_sheet(wb, ws, name);
-                }); XLSX.writeFile(wb, 'Lembar_Kerja_' + currentUser.username + '.xlsx');
-            }
-            catch (err) { Swal.fire('Ekspor gagal', err.message, 'error'); }
-        }
-</script>
-), String(i)); 
-                    const pos = address(to); 
-                    return pos ? { type: 'move', pos } : { type: 'invalid' }; 
-                }
-                const table = { 
+                const table = {
                     'baris berikutnya': 'nextRow', 'bawah': 'nextRow', 'ganti baris': 'nextRow',
                     'kolom berikutnya': 'nextCol', 'kanan': 'nextCol', 'lanjut': 'nextCol', 'next': 'nextCol',
                     'kolom sebelumnya': 'prevCol', 'kiri': 'prevCol',
@@ -7403,10 +6348,38 @@
         function gdMessage(text, kind = 'info') { const e = gdEl('gd-message'); e.textContent = text; e.dataset.kind = kind; }
         function gdDraft() { return gdEl('gd-preview').value; }
         function gdSetDraft(text) { gdEl('gd-preview').value = text; speechBuffer = text; updateDiktePreview(); }
-        function gdState(state, text) { const p = gdEl('gov-dikte-panel'); p.dataset.state = state; gdEl('gd-state-text').textContent = text; gd.status = text; }
+        function gdState(state, text) {
+            const p = gdEl('gov-dikte-panel');
+            if (p) {
+                p.dataset.state = state;
+                const dot = gdEl('gd-pulse-dot');
+                if (dot) dot.dataset.state = state;
+            }
+            const st = gdEl('gd-state-text');
+            if (st) st.textContent = text;
+            gd.status = text;
+            const micIcon = gdEl('gd-capsule-mic-icon');
+            if (micIcon) {
+                if (state === 'listening') {
+                    micIcon.className = 'fas fa-microphone-lines animate__animated animate__pulse animate__infinite';
+                } else if (state === 'error') {
+                    micIcon.className = 'fas fa-microphone-slash text-danger';
+                } else {
+                    micIcon.className = 'fas fa-microphone';
+                }
+            }
+        }
+        function gdButtons() {
+            const hasDraft = !!gdDraft().trim();
+            const ins = gdEl('gd-insert');
+            if (ins) ins.disabled = !hasDraft || gd.busy;
+            const und = gdEl('gd-undo');
+            if (und) und.disabled = !gd.undo.length || gd.busy;
+        }
         function updateDiktePreview() {
-            speechBuffer = gdDraft(); const has = !!speechBuffer.trim(); gdEl('gd-char-count').textContent = speechBuffer.length + ' karakter';
-            gdEl('gd-insert').disabled = !has || gd.busy; gdEl('gd-append').disabled = !has || gd.busy; gdEl('gd-undo').disabled = !gd.undo.length || gd.busy;
+            speechBuffer = gdDraft(); const has = !!speechBuffer.trim();
+            const charEl = gdEl('gd-char-count'); if (charEl) charEl.textContent = speechBuffer.length + ' karakter';
+            gdButtons();
         }
         function gdCurrentTarget() {
             const pos = getActiveCellPosition(); let sheet = null;
@@ -7423,7 +6396,7 @@
             if (!sheet) throw new Error('Tab tujuan sudah dihapus atau diganti. Kunci kembali sel tujuan.');
             return { ...target, order: Number(sheet.order), sheetName: sheet.name };
         }
-        function gdRenderTarget() { if (!gd.target) return; gdEl('gd-target-coordinate').textContent = GovDikteCore.coordinate(gd.target.r, gd.target.c); gdEl('gd-target-sheet').textContent = gd.target.sheetName; $('#dikte-target-cell').text(GovDikteCore.coordinate(gd.target.r, gd.target.c)); }
+        function gdRenderTarget() { if (!gd.target) return; gdEl('gd-target-coordinate').textContent = GovDikteCore.coordinate(gd.target.r, gd.target.c); const sh = gdEl('gd-target-sheet'); if (sh) sh.textContent = gd.target.sheetName; $('#dikte-target-cell').text(GovDikteCore.coordinate(gd.target.r, gd.target.c)); }
         function captureDikteTarget() {
             if (gd.starting || gd.listening || gd.busy) return gdMessage('Jeda dikte sebelum mengganti sel tujuan.', 'error');
             if (gdDraft().trim()) return gdMessage('Masukkan atau batalkan pratinjau dahulu sebelum mengganti target.', 'error');
@@ -7431,10 +6404,26 @@
         }
         function openDiktePanel() {
             if (!gmCanWriteWorkbook()) return;
-            const panel = gdEl('gov-dikte-panel'); panel.classList.remove('d-none', 'gd-mini');
-            if (gd.owner !== currentUser.user_id) { gd.undo = []; gd.target = null; gdSetDraft(''); gd.owner = currentUser.user_id; }
-            if (!gd.target) captureDikteTarget(); gdRestorePosition(); gdDrawIdle(); updateDiktePreview();
-            gdEl('gd-record').focus();
+            const panel = gdEl('gov-dikte-panel');
+            if (panel) panel.classList.remove('d-none');
+            if (gd.owner !== currentUser?.user_id) { gd.undo = []; gd.target = null; gdSetDraft(''); gd.owner = currentUser?.user_id; }
+            if (!gd.target) captureDikteTarget();
+            updateDiktePreview();
+            if (!gd.listening && !gd.starting) startDikteRecording();
+            const inp = gdEl('gd-preview');
+            if (inp) inp.focus();
+        }
+        function toggleDikteRecording() {
+            if (gd.listening || gd.starting) pauseDikteRecording();
+            else startDikteRecording();
+        }
+        function focusDikteInput() {
+            const inp = gdEl('gd-preview');
+            if (inp) inp.focus();
+        }
+        function toggleDikteCheatSheet() {
+            const d = gdEl('gd-cheatsheet-drawer');
+            if (d) d.classList.toggle('d-none');
         }
         function toggleSpeechRecognition() { if (gd.listening || gd.starting) pauseDikteRecording(); else openDiktePanel(); }
         function minimizeDiktePanel() { const panel = gdEl('gov-dikte-panel'); panel.classList.toggle('gd-mini'); gdEl('gd-minimize').setAttribute('aria-label', panel.classList.contains('gd-mini') ? 'Perluas panel' : 'Ringkas panel'); gdClampPosition(); }
@@ -7541,27 +6530,48 @@
             gdMessage(gd.commandMode ? 'Mode Perintah aktif. Masukkan dan Tambahkan juga dapat dijalankan lewat perintah suara.' : 'Mode Perintah mati. Semua ucapan menjadi teks pratinjau.');
         }
         function handleVoiceCommandAndAppend(rawText) {
-            const text = String(rawText || '').trim(); if (!text) return;
-            if (gd.commandMode) { const command = GovDikteCore.command(text); if (command) { gdRunCommand(command); return; } }
-            gdSetDraft(GovDikteCore.merge(gdDraft(), text)); gdMessage('Teks masuk ke pratinjau. Belum ada perubahan pada sel.');
+            let text = String(rawText || '').trim(); if (!text) return;
+            const command = GovDikteCore.command(text);
+            if (command) { gdRunCommand(command); return; }
+            text = GovDikteCore.formatBureaucracy(text);
+            gdSetDraft(GovDikteCore.merge(gdDraft(), text));
+            gdMessage('Teks kedinasan masuk ke pratinjau.');
         }
         function runDikteTypedCommand() {
-            if (!gd.commandMode) return gdMessage('Aktifkan Mode Perintah terlebih dahulu.', 'error');
-            const command = GovDikteCore.command(gdEl('gd-command-input').value); if (!command) return gdMessage('Perintah tidak dikenali. Gunakan contoh yang tersedia.', 'error');
-            gdRunCommand(command); gdEl('gd-command-input').value = '';
+            const inp = gdEl('gd-command-input');
+            const val = inp ? inp.value : '';
+            const command = GovDikteCore.command(val);
+            if (!command) return gdMessage('Perintah tidak dikenali.', 'error');
+            gdRunCommand(command);
+            if (inp) inp.value = '';
         }
         function gdRunCommand(command) {
             if (command.type === 'invalid') return gdMessage('Alamat sel tidak valid. Gunakan A1 sampai GR10000.', 'error');
-            if (command.type === 'move' || command.type === 'nextRow') {
-                if (gdDraft().trim()) return gdMessage('Target tetap terkunci: masukkan atau batalkan pratinjau dahulu.', 'error');
+            if (command.type === 'move' || command.type === 'nextRow' || command.type === 'nextCol' || command.type === 'prevCol' || command.type === 'prevRow') {
+                if (gdDraft().trim()) {
+                    applyDiktePreview('append');
+                }
                 try {
-                    const target = gdResolveTarget(gd.target), pos = command.type === 'move' ? command.pos : { r: target.r + 1, c: target.c };
+                    const target = gdResolveTarget(gd.target);
+                    let pos = { r: target.r, c: target.c };
+                    if (command.type === 'move') pos = command.pos;
+                    else if (command.type === 'nextRow') pos.r = target.r + 1;
+                    else if (command.type === 'prevRow') pos.r = Math.max(0, target.r - 1);
+                    else if (command.type === 'nextCol') pos.c = target.c + 1;
+                    else if (command.type === 'prevCol') pos.c = Math.max(0, target.c - 1);
                     if (pos.r > 9999) throw new Error('Batas baris adalah 10000.');
                     if (target.fallback && !gdEl('grid-cell-' + (pos.r + 1) + '-' + pos.c)) throw new Error('Sel ini tidak tersedia dalam editor cadangan.');
                     gd.target = { ...target, ...pos }; gdRenderTarget();
-                    if (!target.fallback) luckysheet.setRangeShow({ row: [pos.r, pos.r], column: [pos.c, pos.c] }, { order: target.order }); else setFallbackActiveCell(pos.r, pos.c, GovDikteCore.coordinate(pos.r, pos.c));
+                    if (!target.fallback && typeof luckysheet !== 'undefined' && luckysheet.setRangeShow) luckysheet.setRangeShow({ row: [pos.r, pos.r], column: [pos.c, pos.c] }, { order: target.order });
+                    else setFallbackActiveCell(pos.r, pos.c, GovDikteCore.coordinate(pos.r, pos.c));
                     gdMessage('Target berpindah dan dikunci ke ' + GovDikteCore.coordinate(pos.r, pos.c) + '.', 'success');
                 } catch (e) { gdMessage(e.message, 'error'); }
+            } else if (command.type === 'clear') {
+                try {
+                    const target = gdResolveTarget(gd.target);
+                    gdWriteCell(target, null, gdReadCell(target).text, '', 'Dikte — Hapus');
+                    gdMessage('Isi sel ' + GovDikteCore.coordinate(target.r, target.c) + ' telah dibersihkan.', 'success');
+                } catch(e) { gdMessage(e.message, 'error'); }
             } else if (command.type === 'append' || command.type === 'replace') applyDiktePreview(command.type);
             else if (command.type === 'undo') undoDikteInput(); else if (command.type === 'cancel') cancelDikteDraft(); else if (command.type === 'pause') pauseDikteRecording();
         }
@@ -7612,7 +6622,7 @@
             window.addEventListener('pagehide', () => pauseDikteRecording(true));
             document.addEventListener('visibilitychange', () => { if (document.hidden && (gd.listening || gd.starting)) pauseDikteRecording(true); });
         }
-        Object.assign(window, { openDiktePanel, closeDiktePanel, minimizeDiktePanel, captureDikteTarget, startDikteRecording, pauseDikteRecording, updateDiktePreview, applyDiktePreview, cancelDikteDraft, toggleDikteCommandMode, runDikteTypedCommand, undoDikteInput });
+        Object.assign(window, { openDiktePanel, toggleDikteRecording, toggleDikteCheatSheet, focusDikteInput, closeDiktePanel, minimizeDiktePanel, captureDikteTarget, startDikteRecording, pauseDikteRecording, updateDiktePreview, applyDiktePreview, cancelDikteDraft, toggleDikteCommandMode, runDikteTypedCommand, undoDikteInput });
         /* GOVDIKTE_CONTROLLER_END */
 
         function startChatPolling() {
