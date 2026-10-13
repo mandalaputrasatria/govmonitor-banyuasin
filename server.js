@@ -29,6 +29,49 @@ const server = http.createServer((req, res) => {
     const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     let pathname = decodeURIComponent(parsedUrl.pathname);
 
+    // Penanganan CORS Preflight
+    if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        });
+        return res.end();
+    }
+
+    const GAS_EXEC_URL = 'https://script.google.com/macros/s/AKfycbwfOAV8tI1Ue6EBLehOvE-WgduT7CACvfb6VUXRyJWXBtnfi-QFAGmP7G_uCffhMLLJ/exec';
+
+    // Penanganan API POST (Proxy Langsung ke Google Apps Script)
+    if (req.method === 'POST') {
+        let bodyData = '';
+        req.on('data', chunk => { bodyData += chunk; });
+        req.on('end', async () => {
+            try {
+                console.log(`[Local Server] Meneruskan panggilan POST (${pathname}) ke Google Apps Script...`);
+                const gasRes = await fetch(GAS_EXEC_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: bodyData,
+                    redirect: 'follow'
+                });
+                const resText = await gasRes.text();
+                res.writeHead(200, {
+                    'Content-Type': 'application/json; charset=utf-8',
+                    'Access-Control-Allow-Origin': '*'
+                });
+                res.end(resText);
+            } catch (proxyErr) {
+                console.error('[Local Server Proxy Error]:', proxyErr.message);
+                res.writeHead(500, {
+                    'Content-Type': 'application/json; charset=utf-8',
+                    'Access-Control-Allow-Origin': '*'
+                });
+                res.end(JSON.stringify({ success: false, error: 'Proxy gagal menghubungi Google Apps Script: ' + proxyErr.message }));
+            }
+        });
+        return;
+    }
+
     // API Route untuk cuaca & kualitas udara (Environment)
     if (pathname === '/api/environment') {
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -105,17 +148,18 @@ function serveHtml(filePath, res) {
             return res.end('Gagal membaca file HTML: ' + err.message);
         }
 
-        // Ganti tag template GAS <?!= bootJson ?> dengan JSON boot data yang valid
-        const mockBoot = {
+        // Hubungkan langsung ke deployment Google Apps Script aktif
+        const liveBoot = {
             success: true,
-            version: '2026.10.07-localhost-dev',
-            deployment_url: `http://localhost:${PORT}`,
+            version: '2026.10.07-live',
+            deployment_url: 'https://script.google.com/macros/s/AKfycbwfOAV8tI1Ue6EBLehOvE-WgduT7CACvfb6VUXRyJWXBtnfi-QFAGmP7G_uCffhMLLJ/exec',
+            spreadsheet_id: '1SgaDigEUmYCLMfXPysWDxI243RgZlbws6fozC9xXF9M',
             timezone: 'Asia/Jakarta',
             archive_token: ''
         };
 
-        let processedHtml = html.replace(/<script id="gm-boot-data" type="application\/json">[\s\S]*?<\/script>/, `<script id="gm-boot-data" type="application/json">${JSON.stringify(mockBoot)}</script>`);
-        processedHtml = processedHtml.replace(/<\?!=?\s*bootJson\s*\?>/g, JSON.stringify(mockBoot));
+        let processedHtml = html.replace(/<(?:div|script) id="gm-boot-data"[^>]*>[\s\S]*?<\/(?:div|script)>/, `<script id="gm-boot-data" type="application/json">${JSON.stringify(liveBoot)}</script>`);
+        processedHtml = processedHtml.replace(/<\?!=?\s*bootJson\s*\?>/g, JSON.stringify(liveBoot));
 
         // Evaluasi include template modular GAS: <?!= include('Filename'); ?>
         processedHtml = processedHtml.replace(/<\?!=\s*include\(['"]([^'"]+)['"]\)\s*;?\s*\?>/g, (match, filename) => {

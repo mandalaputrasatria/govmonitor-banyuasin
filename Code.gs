@@ -31,7 +31,7 @@ function db_() {
       try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch(e) { ss = null; }
     }
   }
-  if (!ss || !ss.getSheetByName('Users')) throw new Error('Database Google Sheets belum siap. Silakan jalankan fungsi setupDatabase sekali di Google Apps Script.');
+  if (!ss) throw new Error('Database Google Sheets belum siap. Silakan periksa ID Spreadsheet: ' + USER_SPREADSHEET_ID);
   return ss;
 }
 function locked_(fn) {
@@ -47,13 +47,110 @@ function sheet_(ss, name, headers) {
 function digest_(s) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(s))); }
 function hashPassword_(password, salt) {
   salt = salt || Utilities.getUuid();
-  var secret = PropertiesService.getScriptProperties().getProperty('PASSWORD_SECRET');
-  if (!secret) throw new Error('Jalankan fungsi setupDatabase dari editor Apps Script untuk menyiapkan keamanan login.');
+  var props = PropertiesService.getScriptProperties();
+  var secret = props.getProperty('PASSWORD_SECRET');
+  if (!secret) {
+    secret = Utilities.getUuid() + '-' + Utilities.getUuid();
+    props.setProperty('PASSWORD_SECRET', secret);
+  }
   return 'hmac$' + salt + '$' + Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(salt + ':' + password, secret));
 }
 function verifyPassword_(password, stored) {
   var parts = String(stored).split('$');
   return parts.length === 3 && hashPassword_(password,parts[1]) === stored;
+}
+
+function setupDatabase() {
+  return locked_(function() {
+    var props = PropertiesService.getScriptProperties();
+    var secret = props.getProperty('PASSWORD_SECRET');
+    if (!secret) {
+      secret = Utilities.getUuid() + '-' + Utilities.getUuid();
+      props.setProperty('PASSWORD_SECRET', secret);
+    }
+    props.setProperty('SPREADSHEET_ID', USER_SPREADSHEET_ID);
+
+    var ss = null;
+    try { ss = SpreadsheetApp.openById(USER_SPREADSHEET_ID); } catch(e) { ss = null; }
+    if (!ss) {
+      try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch(e) { ss = null; }
+    }
+    if (!ss) throw new Error('Tidak dapat membuka Google Spreadsheet ID: ' + USER_SPREADSHEET_ID);
+
+    // 1. Users sheet
+    var userSheet = sheet_(ss, 'Users', ['ID User', 'Username', 'Password Hash', 'Nama Lengkap', 'NIP', 'Jabatan', 'Role', 'Status', 'Foto URL']);
+    var existingUsers = userSheet.getDataRange().getValues();
+    if (existingUsers.length <= 1) {
+      var defaultAccounts = [
+        ['USR-001', 'admin_banyuasin', hashPassword_('Admin@Banyuasin2026!'), 'Admin Diskoperindag Banyuasin', '198501012010011001', 'Administrator Sistem', 'Admin', 'Aktif', ''],
+        ['USR-002', 'staf_uji1', hashPassword_('Staf@Banyuasin2026!'), 'Ahmad Fauzi, S.E.', '199002152015031002', 'Pengelola Koperasi dan UMKM', 'Staf', 'Aktif', ''],
+        ['USR-003', 'staf_uji2', hashPassword_('Staf@Banyuasin2026!'), 'Siti Rahmawati, S.Kom.', '199407222019022005', 'Analis Perdagangan & Pasar', 'Staf', 'Aktif', '']
+      ];
+      defaultAccounts.forEach(function(row) { userSheet.appendRow(row); });
+    }
+
+    // 2. Sessions
+    sessionStore_();
+
+    // 3. Worksheets_State
+    sheet_(ss, 'Worksheets_State', ['User ID', 'Worksheet Name', 'JSON Data', 'Updated At', 'Cell Count']);
+
+    // 4. Worksheet_Bindings
+    var bindings = sheet_(ss, 'Worksheet_Bindings', ['User ID', 'Tab Name', 'Sheet ID']);
+
+    // 5. Staff_Presence
+    sheet_(ss, 'Staff_Presence', ['User ID', 'Date', 'Timer Seconds', 'Last Seen', 'Device', 'Active Task']);
+
+    // 6. Staff_Session_Logs
+    sheet_(ss, 'Staff_Session_Logs', ['Session Hash', 'User ID', 'Login At', 'Exit At', 'Reason', 'Save Status']);
+
+    // 7. Audit_Logs
+    sheet_(ss, 'Audit_Logs', ['Log ID', 'Timestamp', 'User ID', 'Nama Staf', 'NIP', 'Cell', 'Prev Val', 'New Val', 'IP', 'Device', 'Method', 'Tab Name', 'System Context']);
+
+    // 8. Broadcast_Announcements
+    var bc = sheet_(ss, 'Broadcast_Announcements', ['ID', 'Timestamp', 'Issuer ID', 'Issuer Name', 'Category', 'Message', 'Created At', 'Expires At', 'Status']);
+    if (bc.getDataRange().getValues().length <= 1) {
+      bc.appendRow(['BC-001', '08:00 WIB', 'USR-001', 'Admin Diskoperindag Banyuasin', 'Pemberitahuan', 'Selamat datang di GovMonitor Diskoperindag Banyuasin. Seluruh staf diwajibkan melakukan absen harian dan mencatat progres kegiatan pada lembar kerja.', Date.now() - 3600000, Date.now() + 86400000 * 3, 'Aktif']);
+    }
+
+    // 9. Broadcast_Reads
+    sheet_(ss, 'Broadcast_Reads', ['Broadcast ID', 'User ID', 'Read At']);
+
+    // 10. Daily_Attendance
+    sheet_(ss, 'Daily_Attendance', ['ID', 'Date', 'User ID', 'Nama', 'NIP', 'Timestamp', 'Recorded At']);
+
+    // 11. Time_Buckets
+    sheet_(ss, 'Time_Buckets', ['Bucket Key', 'User ID', 'Bucket Start', 'Active Ms', 'Idle Ms']);
+
+    // 12. Chat_Logs
+    sheet_(ss, 'Chat_Logs', ['ID', 'Sender ID', 'Sender Name', 'Recipient ID', 'Message', 'Timestamp', 'Read']);
+
+    // 13. Supervisor_Notes
+    sheet_(ss, 'Supervisor_Notes', ['ID', 'Timestamp', 'Admin Name', 'Note Text', 'Target User ID']);
+
+    // 14. Admin_Worksheet_Audit & Backups
+    sheet_(ss, 'Admin_Worksheet_Audit', ['Log ID', 'Waktu', 'Admin ID', 'Admin Nama', 'Staf ID', 'Staf Nama', 'Tab', 'Sel', 'Nilai Lama', 'Nilai Baru', 'Tindakan', 'Status']);
+    sheet_(ss, 'Admin_Workbook_Backups', ['Request ID', 'Staf ID', 'Chunk', 'JSON', 'Waktu']);
+    sheet_(ss, 'Worksheet_Edit_Locks', ['Staf ID', 'JSON']);
+
+    // 15. Inisialisasi tab lembar kerja individual staf jika belum ada
+    var staffAccounts = [
+      { id: 'USR-002', name: 'Ahmad Fauzi - lembar_kerja 1' },
+      { id: 'USR-003', name: 'Siti Rahmawati - lembar_kerja 1' }
+    ];
+    staffAccounts.forEach(function(sa) {
+      var sh = ss.getSheetByName(sa.name);
+      if (!sh) {
+        sh = ss.insertSheet(sa.name);
+        sh.getRange(1, 1, 1, 6).setValues([['No', 'Hari / Tanggal', 'Uraian Kegiatan / Tugas Pokok', 'Output / Hasil Kerja', 'Keterangan / Kendala', 'Status Validasi']]);
+        sh.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#0f766e').setFontColor('#ffffff');
+        sh.setFrozenRows(1);
+        bindings.appendRow([sa.id, sa.name, sh.getSheetId()]);
+      }
+    });
+
+    return { success: true, message: 'Database Google Sheets 1SgaDigEUmYCLMfXPysWDxI243RgZlbws6fozC9xXF9M berhasil diinisialisasi secara utuh.' };
+  });
 }
 function user_(row) { return {user_id:String(row[0]),username:String(row[1]),nama:String(row[3]),nip:String(row[4]),jabatan:String(row[5]),role:String(row[6]),status:String(row[7]),foto:String(row[8]||''),timer_seconds:0,active_task:'',device:'',ip_address:'Tidak tersedia'}; }
 function allUsers_() { return db_().getSheetByName('Users').getDataRange().getValues().slice(1).filter(function(r){return r[0];}); }
@@ -230,7 +327,9 @@ function worksheetsForUser_(id) {
   var json=rows.map(function(r){var v=String(r[2]);return v.startsWith('json:')?v.slice(5):v;}).join('');
   try{return {sheets:JSON.parse(json),updated_at:String(rows[0][3]||'')};}catch(e){throw new Error('Salinan lembar kerja tidak lengkap. Pulihkan backup JSON atau sinkronkan ulang dari browser staf.');}
 }
-function workbookForStaff_(id){var data=worksheetsForUser_(String(id)),ss=db_(),u=editStaff_(id);data.sheets=data.sheets.map(function(original){var sh=JSON.parse(JSON.stringify(original)),name=tabName_(u,sh.name),native=worksheetTab_(ss,u,sh.name,false);sh.google_sheet_name=native?native.getName():name;sh.source=native?'google-sheet':'saved-state';if(!native)return sh;
+function workbookForStaff_(id){var data=worksheetsForUser_(String(id)),ss=db_(),u=editStaff_(id);
+ if(!data.sheets||!data.sheets.length){worksheetTab_(ss,u,'lembar_kerja 1',true);data.sheets=[{name:'lembar_kerja 1',status:1,order:0,row:50,column:20,data:[[{v:'No',m:'No'},{v:'Hari / Tanggal',m:'Hari / Tanggal'},{v:'Uraian Kegiatan / Tugas Pokok',m:'Uraian Kegiatan / Tugas Pokok'},{v:'Output / Hasil Kerja',m:'Output / Hasil Kerja'},{v:'Keterangan / Kendala',m:'Keterangan / Kendala'},{v:'Status Validasi',m:'Status Validasi'}]],config:{}}];}
+ data.sheets=data.sheets.map(function(original){var sh=JSON.parse(JSON.stringify(original)),name=tabName_(u,sh.name),native=worksheetTab_(ss,u,sh.name,false);sh.google_sheet_name=native?native.getName():name;sh.source=native?'google-sheet':'saved-state';if(!native)return sh;
  var nr=Math.max(1,native.getLastRow()),nc=Math.max(1,native.getLastColumn());if(nr>10000||nc>200||nr*nc>GM.maxCells)throw new Error('Lembar kerja melebihi batas tampilan 200000 sel.');var range=native.getRange(1,1,nr,nc),values=range.getValues(),display=range.getDisplayValues(),formulas=range.getFormulas();
  var old=new Map();(sh.celldata||[]).forEach(function(c){old.set(c.r+':'+c.c,c.v);});sh.data=values.map(function(line,r){return line.map(function(v,c){var prior=sh.data&&sh.data[r]&&sh.data[r][c]||old.get(r+':'+c)||{},cell=typeof prior==='object'?Object.assign({},prior):{};cell.v=v instanceof Date?v.toISOString():v;cell.m=display[r][c];if(formulas[r][c])cell.f=formulas[r][c];else delete cell.f;return cell;});});sh.celldata=[];return sh;});return data;}
 function getStaffWorksheetsFromGAS(token){var u=auth_(token);return locked_(function(){var data=editWorkbook_(u.user_id);data.success=true;return data;});}

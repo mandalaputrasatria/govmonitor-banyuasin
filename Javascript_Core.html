@@ -292,11 +292,12 @@
                 return { success: true };
             }
 
-            const DEFAULT_GAS_EXEC_URL = "https://script.google.com/macros/s/AKfycbxO1ALH-CiTYo45IqQQeKRaUGBqD8Ejqv1KFMy9TjYaD6ByzUqF6xhfDz86wo99Ocwu/exec";
+            const DEFAULT_GAS_EXEC_URL = "https://script.google.com/macros/s/AKfycbwfOAV8tI1Ue6EBLehOvE-WgduT7CACvfb6VUXRyJWXBtnfi-QFAGmP7G_uCffhMLLJ/exec";
             window.DEFAULT_GAS_EXEC_URL = DEFAULT_GAS_EXEC_URL;
 
             async function callRemoteGAS(method, args) {
-                const targetUrl = window.GM_EXEC_URL || DEFAULT_GAS_EXEC_URL;
+                const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                const targetUrl = isLocal ? '/api/gas' : (window.GM_EXEC_URL || DEFAULT_GAS_EXEC_URL);
                 if (!targetUrl) throw new Error('Target Google Apps Script URL tidak tersedia.');
                 
                 const response = await fetch(targetUrl, {
