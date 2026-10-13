@@ -188,7 +188,7 @@
                 $('#view-staff-workspace').removeClass('d-none');
 
                 setTimeout(function () {
-                    if (!IS_GAS) return initLuckysheetEditor();
+                    // Load directly from Google Sheets with offline fallback
                     gasRun().withSuccessHandler(res => {
                         gmStaffLoadMeta(res);
                         const remote = res.sheets?.length ? res.sheets : [{ name: 'lembar_kerja 1', status: 1, order: 0, data: [], config: {} }];

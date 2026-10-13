@@ -833,11 +833,11 @@
         function pendingAuditKey() { return getStaffStorageKey() + '_audit_pending'; }
         function pendingAudits() { try { return JSON.parse(localStorage.getItem(pendingAuditKey()) || '[]'); } catch (e) { return []; } }
         function keepPendingAudit(item) { try { const pending = pendingAudits(); pending.push(item); localStorage.setItem(pendingAuditKey(), JSON.stringify(pending)); } catch (e) { Swal.fire('Backup lokal penuh', 'Ekspor backup JSON dan sinkronkan sekarang.', 'warning'); } }
-        function queueSnapshot() { if (gmStaffConflict || gmStaffPaused || gmEnding || !IS_GAS || !currentUser || currentUser.role !== 'Staf') return; clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(saveRemoteSnapshot, 2000); }
+        function queueSnapshot() { if (gmStaffConflict || gmStaffPaused || gmEnding || !currentUser || currentUser.role !== 'Staf') return; clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(saveRemoteSnapshot, 2000); }
         function saveRemoteSnapshot(manual = false) {
             if (gmEnding || gmStaffConflict || (gmStaffPaused && (gmStaffLock?.state === 'active' || gmStaffAcknowledged))) return;
             if (!currentUser || currentUser.role !== 'Staf') return;
-            if (!IS_GAS) { saveSheetToLocalStorage(); if (manual) Swal.fire('Tersimpan di browser', 'Data demo disimpan pada perangkat ini.', 'success'); return; }
+            saveSheetToLocalStorage();
             if (!navigator.onLine) { saveSheetToLocalStorage(); $('#status-sync-text').text('Offline · perubahan menunggu sinkronisasi'); if (manual) Swal.fire('Belum tersimpan di server', 'Internet tidak tersedia. Backup browser tetap disimpan.', 'warning'); return; }
             if (snapshotBusy) { snapshotAgain = true; return; }
             const data = JSON.parse(JSON.stringify(getWorkbook())); if (!data.length) return;
@@ -848,8 +848,8 @@
                 if (currentUser?.user_id === owner && sessionToken === saveToken) {
                     gmStaffSaved(res, data); const saved = new Set(res.saved_log_ids || []); localStorage.setItem(pendingAuditKey(), JSON.stringify(pendingAudits().filter(x => !saved.has(x.log_id))));
                     if (JSON.stringify(getWorkbook()) === JSON.stringify(data) && !pendingAudits().length) localStorage.removeItem(key + '_dirty'); else snapshotAgain = true;
-                    $('#status-sync-text').text('Tersimpan di penyimpanan GovMonitor · ' + new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }));
-                    if (manual) Swal.fire('Sinkronisasi berhasil', res.synced_tabs + ' tab tersimpan di penyimpanan GovMonitor.', 'success');
+                    $('#status-sync-text').text('Tersinkron di Google Sheets · ' + new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }));
+                    if (manual) Swal.fire('Sinkronisasi Berhasil', res.synced_tabs + ' tab lembar kerja staf berhasil tersimpan di Google Sheets Anda.', 'success');
                 } finish();
             }).withFailureHandler(err => { if (/Versi lembar kerja berubah/.test(err.message)) { gmStaffConflict = true; gmStaffOverlay(); } $('#status-sync-text').text('Belum tersimpan di server · klik Sinkronisasi'); if (manual) Swal.fire('Sinkronisasi gagal', err.message || String(err), 'error'); finish(); }).syncFullSheetToGAS({ sheets_data: data, audit_logs: logs, expected_revision: gmStaffRevision });
         }
