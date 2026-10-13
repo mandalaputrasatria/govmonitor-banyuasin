@@ -183,10 +183,11 @@ function getAuditLogsFromGAS(token) {
   var keys=['log_id','timestamp','user_id','nama_staf','nip','cell','prev_val','new_val','ip','device','method'];
   return {success:true,logs:rows.filter(function(r){return u.role==='Admin'||r[2]===u.user_id;}).slice(-2000).reverse().map(auditObject_)};
 }
-function tabName_(u,name) {
-  var raw=u.nama+' - '+u.nip+' - '+String(name||'lembar_kerja 1')+' - '+u.user_id;
-  raw=raw.replace(/[\[\]:*?\/\\]/g,'_');
-  return raw.length<=100?raw:raw.slice(0,86)+'-'+digest_(raw).slice(0,12);
+function tabName_(u, name) {
+  var staffName = (u.nama || u.username || 'Staf').split(',')[0].trim();
+  var raw = staffName + ' - ' + String(name || 'lembar_kerja 1');
+  raw = raw.replace(/[\[\]:*?\/\\]/g, '_');
+  return raw.length <= 100 ? raw : raw.slice(0, 86) + '-' + digest_(raw).slice(0, 12);
 }
 function worksheetTab_(ss,u,name,create){
  var map=sheet_(ss,'Worksheet_Bindings',['User ID','Tab Name','Sheet ID']),rows=map.getDataRange().getValues(),entry=rows.slice(1).find(function(r){return String(r[0])===u.user_id&&String(r[1])===String(name);}),native=entry?ss.getSheets().find(function(sh){return sh.getSheetId()===Number(entry[2]);}):ss.getSheetByName(tabName_(u,name));
@@ -334,7 +335,8 @@ function doPost(e) {
       saveAuditLogToGAS:[saveAuditLogToGAS,2],getAuditLogsFromGAS:[getAuditLogsFromGAS,1],getReportDataFromGAS:[getReportDataFromGAS,4],
       getActivityTimeData:[getActivityTimeData,2],heartbeatStaff:[heartbeatStaff,2],saveChatMessageToGAS:[saveChatMessageToGAS,2],getChatLogsFromGAS:[getChatLogsFromGAS,1],markChatAsReadGAS:[markChatAsReadGAS,3],
       saveSupervisorNote:[saveSupervisorNote,3],getSupervisorNotes:[getSupervisorNotes,2],
-      getGovAzanConfig:[getGovAzanConfig,1],getGovAzanSchedule:[getGovAzanSchedule,5],processGovLensOCR:[processGovLensOCR,2]
+      getGovAzanConfig:[getGovAzanConfig,1],getGovAzanSchedule:[getGovAzanSchedule,5],processGovLensOCR:[processGovLensOCR,2],
+      setupDatabase:[setupDatabase,0]
     };
     if(!Object.prototype.hasOwnProperty.call(methods,body.method))throw new Error('Fungsi API tidak diizinkan.');
     var spec=methods[body.method];
@@ -459,6 +461,14 @@ function getDailyAttendanceHistoryGAS(date,token){var u=auth_(token);date=String
 function doGet(e) {
   var params = e && e.parameter || {};
   if (params.api === 'health') return gmApiJSON_(gmApiHealth_());
+  if (params.setup === '1' || params.init === '1') {
+    try {
+      var res = setupDatabase();
+      return gmApiJSON_({ success: true, message: 'Database initialized', result: res });
+    } catch(err) {
+      return gmApiJSON_({ success: false, error: err.message, stack: err.stack });
+    }
+  }
   if (params.verify) return HtmlService.createHtmlOutput(archivePublicHTML_(params.verify)).setTitle('Verifikasi Laporan Gov Monitor Diskoperindag Banyuasin').addMetaTag('viewport', 'width=device-width, initial-scale=1');
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
